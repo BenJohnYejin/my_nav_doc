@@ -3,8 +3,11 @@
 **为应对频繁工作环境被损坏导致的数据、代码及工具丢失风险（即便采用移动硬盘备份仍存在意外删除的可能），特将部分技术资料、算法实现及学习心得集中归档于此文档。**
 
 文档主体规划为六个章节：
-1.  **前四章：核心算法文档** - 系统阐述组合导航相关理论、模型与算法实现。
-2.  **第五章：V模型左侧 - 开发实现** - 聚焦工程化实现，包括实时导航软件的设计与开发。
+1.  **第一章节** - 简单阐述惯性导航的软件实现。
+2.  **第二章节** - 简单阐述卫星导航中SPP的软件实现。
+3.  **第三章节** - 简单阐述里程计的递推软件实现。
+4.  **第四章节** - 简单阐述视觉前端的软件实现。
+5.  **第五章：V模型左侧 - 开发实现** - 聚焦工程化实现，包括实时导航软件的设计与开发。
 3.  **第六章：V模型右侧 - 测试验证与分析** - 涵盖测试程序开发、数据处理脚本编写及事后数据分析方法。
 
 **说明：** 除直接服务于客户端的实时导航软件外，一套完备的测试验证工具链（用于数据回放、结果分析、性能评估）及事后数据处理脚本对于保障系统质量和问题定位至关重要。此类工具链在逻辑上归属于第六章（V模型右侧）。
@@ -210,12 +213,49 @@ $$
 外推公式（提高精度）：
 $$x_{m-1/2} = \frac{3x_{m-1} - x_{m-2}}{2} \quad (x = L, h, R_{Mh}, R_{Nh})$$
 
-*注*：位置更新周期通常为速度更新的2-5倍
 
-## 1.6 误差分析，即对导航参数进行时间微分
+## 1.6 误差分析，对导航参数进行微分
+在控制理论中，若需要对一个系统进行调整，一般调整其微分量，达到间接控制的目的，遂给出微分方程，通过控制误差量以及反馈来控制导航参数。
 
+首先，将地球自转角速度$\omega_{i\varepsilon}^{n}$以及导航系转动角速度$\omega_{en}^{n}$的表达式分别重写如下：
+$$\omega_{i\varepsilon}^{n}=\begin{bmatrix}0\\\omega_{i\varepsilon}\cos L\\\omega_{i\varepsilon}\sin L\end{bmatrix}$$
+$$\omega_{en}^{n}=\begin{bmatrix}-\nu_{\mathrm{N}}/(R_{M}+h)\\v_{\mathrm{E}}/(R_{N}+h)\\v_{\mathrm{E}}\tan L/(R_{N}+h)\end{bmatrix}$$
+对 $\omega_{i\varepsilon}^{n}$ 进行微分，得
+$$\delta\omega_{ie}^n=\begin{bmatrix}0\\-\omega_{ie}\sin L\cdot\delta L\\\omega_{ie}\cos L\cdot\delta L\end{bmatrix}=\boldsymbol{M}_1\delta\boldsymbol{p}$$
+对 $\omega_{en}^{n}$ 进行微分，得
+$$\begin{gathered}\delta\omega_{en}^{n}=\begin{bmatrix}-\delta v_{\mathrm{N}}/\left(R_{M}+h\right)+v_{\mathrm{N}}\delta h/\left(R_{M}+h\right)^{2}\\\delta v_{\mathrm{E}}/\left(R_{N}+h\right)-v_{\mathrm{E}}\delta h/\left(R_{N}+h\right)^{2}\\\tan L\cdot\delta v_{\mathrm{E}}/\left(R_{\mathrm{N}}+h\right)+v_{\mathrm{E}}\sec^{2}L\cdot\delta L/\left(R_{N}+h\right)-v_{\mathrm{E}}\tan L\cdot\delta h/\left(R_{N}+h\right)^{2}\end{bmatrix}\\\left.=\left[\begin{array}{c}{-\delta\nu_{\mathrm{N}}/R_{\mathrm{M}h}+\nu_{\mathrm{N}}\delta h/R_{\mathrm{M}h}^{2}}\\{\delta\nu_{\mathrm{E}}/R_{\mathrm{N}h}-\nu_{\mathrm{E}}\delta h/R_{Nh}^{2}}\\{\tan L\cdot\delta\nu_{\mathrm{E}}/R_{\mathrm{N}h}+\nu_{\mathrm{E}}\sec^{2}L\cdot\delta L/R_{\mathrm{N}h}-\nu_{\mathrm{E}}\tan L\cdot\delta h/R_{\mathrm{N}h}^{2}}\end{array}\right.\right]=\boldsymbol{M}_{a\nu}\delta\boldsymbol{\nu}^{n}+\boldsymbol{M}_{2}\delta\boldsymbol{p}\end{gathered}$$
+简记$R_{Mn}=R_{M}+h$,$R_{Nh}=R_{N}+h$, $\delta\boldsymbol{p}=\begin{bmatrix}\delta L&\delta\lambda&\delta h\end{bmatrix}^{\mathrm{T}}$
+定义
+$$
+\begin{gathered}\boldsymbol{M}_{1}=\begin{bmatrix}0&0&0\\-\omega_{\mathrm{g}}\sin L&0&0\\\omega_{\mathrm{g}}\cos L&0&0\end{bmatrix}
+\\
+\boldsymbol{M}_{an}=\begin{bmatrix}0&-1/R_{\mathrm{M}n}&0\\1/R_{\mathrm{N}n}&0&0\\\tan L/R_{Nn}&0&0\end{bmatrix}
+\\
+\boldsymbol{M}_{2}=\begin{bmatrix}0&0&\nu_{\mathrm{N}}/R_{\mathrm{M}n}^{2}\\0&0&-\nu_{\mathrm{E}}/R_{\mathrm{N}n}^{2}\\v_{\mathrm{E}}\sec^{2}L/R_{\mathrm{N}n}&0&-\nu_{\mathrm{E}}\tan L/R_{\mathrm{N}n}^{2}\end{bmatrix}\end{gathered}
+$$
 
+那么姿态误差方程为，
+$$
+\begin{aligned}\mathrm{\dot{\phi}}
+&=\phi\times\omega_{in}^{n}+\delta\omega_{in}^{n}-\delta\omega_{ib}^{n}\\&=\phi\times\omega_{in}^{n}+(\delta\omega_{ie}^{n}+\delta\omega_{en}^{n})-C_{b}^{n}\delta\omega_{ib}^{b}\\
+&=\boldsymbol{\phi}\times\boldsymbol{\omega}_{in}^{n}+(\boldsymbol{M}_{1}\delta\boldsymbol{p}+\boldsymbol{M}_{an}\delta\boldsymbol{v}^{n}+\boldsymbol{M}_{2}\delta\boldsymbol{p})-\boldsymbol{C}_{b}^{n}(\omega_{ibx}^{b}\delta\boldsymbol{K}_{\mathbf{G}x}+\omega_{iby}^{b}\delta\boldsymbol{K}_{\mathbf{G}y}+\omega_{ibz}^{b}\delta\boldsymbol{K}_{\mathbf{G}z}+\boldsymbol{\varepsilon}^{b})\\
+&=-\omega_{in}^{n}\times\boldsymbol{\phi}+\boldsymbol{M}_{an}\delta\boldsymbol{\nu}^{n}+(\boldsymbol{M}_{1}+\boldsymbol{M}_{2})\delta\boldsymbol{p}-\omega_{ibx}^{b}\boldsymbol{C}_{b}^{n}\delta\boldsymbol{K}_{\mathbf{G}x}-\omega_{iby}^{b}\boldsymbol{C}_{b}^{n}\delta\boldsymbol{K}_{\mathbf{G}y}-\omega_{ibz}^{b}\boldsymbol{C}_{b}^{n}\delta\boldsymbol{K}_{\mathbf{G}z}-\boldsymbol{C}_{iby}\\
+&=\boldsymbol{M}_{aa}\boldsymbol{\phi}+\boldsymbol{M}_{a\nu}\delta\boldsymbol{\nu}^{n}+\boldsymbol{M}_{ap}\delta\boldsymbol{p}-\omega_{ibx}^{b}\boldsymbol{C}_{b}^{n}\delta\boldsymbol{K}_{\mathbf{G}x}-\omega_{iby}^{b}\boldsymbol{C}_{b}^{n}\delta\boldsymbol{K}_{\mathbf{G}y}-\omega_{ibz}^{b}\boldsymbol{C}_{b}^{n}\delta\boldsymbol{K}_{\mathbf{G}z}-\boldsymbol{C}_{b}^{n}\boldsymbol{\varepsilon}^{b}\end{aligned}
+$$
+速度误差方程为，
+$$
+\begin{gathered}\delta\dot{\nu}^{n}=\boldsymbol{f}_{\mathrm{sf}}^{n}\times\boldsymbol{\phi}+\left[(\boldsymbol{\nu}^{n}\times)\boldsymbol{M}_{cn}-(2\boldsymbol{\omega}_{i\boldsymbol{e}}^{n}+\boldsymbol{\omega}_{en}^{n})\times\right]\mathbf{\delta}\boldsymbol{\nu}^{n}+\left[(\boldsymbol{\nu}^{n}\times)(2\boldsymbol{M}_{1}+\boldsymbol{M}_{2})+\boldsymbol{M}_{3}\right]\mathbf{\delta}\boldsymbol{p}\\+C_{b}^{n}(f_{sfx}^{b}\delta K_{Ax}+f_{sfy}^{b}\delta K_{Ay}+f_{sfz}^{b}\delta K_{Az}+\nabla^{b})\end{gathered}
+$$
+其中
+$$
+\begin{aligned}&M_{_{va}}=(f_{\mathrm{sf}}^{n}\times)\\&\boldsymbol{M}_{_{w}}=(v^{n}\times)M_{av}-\left[(2\omega_{ie}^{n}+\omega_{en}^{n})\times\right]\\&\boldsymbol{M}_{\nu p}=(v^{n}\times)(2M_{1}+M_{2})+M_{3}\end{aligned}
+$$
 
+位置误差为
+$$\delta\dot{p}=M_{pv}\delta v^{n}+M_{pp}\delta p$$
+其中，
+$$\boldsymbol{M}_{pv}=\begin{bmatrix}0&1/R_{Mh}&0\\\sec L/R_{Nh}&0&0\\0&0&1\end{bmatrix}$$
+$$\left.\boldsymbol{M}_{pp}=\left\lfloor\begin{array}{ccc}{0}&{0}&{-\nu_{_\mathrm{N}}/R_{_\mathrm{Mh}}^{2}}\\{v_{_\mathrm{E}}\sec L\tan L/R_{_\mathrm{Nh}}}&{0}&{-\nu_{_\mathrm{E}}\sec L/R_{_\mathrm{Nh}}^{2}}\\{0}&{0}&{0}\end{array}\right.\right\rfloor$$
 
 
 ## 4.  融合技术
@@ -241,6 +281,165 @@ $$ X_k = [\delta \mathbf{\phi}^T, \delta \mathbf{v}^T, \delta \mathbf{p}^T, \mat
 
 
 **该模型的核心思想是：** 在保证主要误差项得到有效估计和补偿的前提下，通过精简状态维度和聚焦可观测参数，提升滤波器的稳定性和实时性，更适用于资源受限的MEMS车载平台。
+
+
+## 5.  软件设计
+**这部分文件内容为项目文档裁剪出来，部分字段以及说明未给出，并非完整的流程，仅作记录**
+
+### 5.1 需求文档
+**目的与范围**
+
+定义GNSS/INS/OD/视觉多源融合组合导航系统的软件功能需求、性能指标及安全要求。文档覆盖传感器原始数据预处理（解码、时间同步、异常过滤）、多源数据时空对齐（坐标系转换、时间戳插值）、融合算法（松/紧耦合可选模式）、定位输出（位置/速度/姿态）、故障诊断及数据记录全流程。适用于车载嵌入式平台开发，满足ISO 26262功能安全要求（ASIL-B），作为设计、测试及ASPICE过程审核的基准依据。
+
+**术语定义**
+
+
+
+**参考文档**
+| 文档名称 | 版本号 | 编写人 | 配置库地址 | 原因 |
+| ------- | -------| -------| ------- | --- |
+|系统需求规格说明书| v1.0 | 王麻子 | svn | 需求来源 |
+|配置管理 | v1.0 |  | | 格式要求 |
+|质量管理| v1.0 | | | 质量检查，升级，QA|
+|需求追溯| v1.0 | | | 需求追溯 |
+|计划书| | | | 日程以及人员安排|
+|协议手册| | | | 硬件接口定义  |
+|功能安全分析报告 | | | | 功能分解 |
+|过程定义 | | QA | | 开发流程合规|
+
+
+**约束**
+
+硬件平台:   \
+存储空间：  \
+时间：   \
+计算频率: \
+RAM：   \
+其他：  
+
+**功能架构**
+
+
+**功能需求**
+
+数据采集 \
+FR001：同步解析GNSS(NMEA-0183)、INS(SPI)、OD(CAN)、视觉(MIPI CSI-2)原始数据
+FR002：支持PPS信号硬同步，时间戳对齐精度≤1ms
+
+预处理 \
+FR003：GNSS数据RAIM检测，自动剔除HDOP>2的无效卫星
+FR004：视觉图像畸变校正（基于内参标定文件）
+
+融合算法 \
+FR005：支持松/紧耦合模式动态切换（根据GNSS信号质量）\
+FR006：INS/OD组合计算航向角（消除轮速计滑移误差）\
+FR007：视觉SLAM辅助闭环检测，修正长期漂移
+
+输出 \
+FR008：输出组合定位结果（WGS84坐标系，包含协方差）\
+FR009：提供定位健康状态码（0-正常，1-警告，2-故障）
+
+**非功能需求**
+
+性能指标 \
+NFR001：定位精度（GNSS可用时）：水平≤0.5m (2σ) \
+NFR002：GNSS失效60s内：水平误差增长≤1%/s \
+NFR003：启动冷初始化时间≤30s
+
+安全与可靠性 \
+NFR004：单点故障检测覆盖率≥90%（ASIL-B） \
+NFR005：关键进程看狗监控超时≤50ms \
+NFR006：数据完整性校验（CRC32）
+
+其他 \
+NFR007：在线标定（自动补偿OD轮径变化） \
+NFR008：支持MDF4格式数据记录（触发式存储）
+
+**软硬件接口**
+
+输入 \
+HSIIN001：GNSS - UART@115200bps (NMEA-0183) \
+HSIIN002：INS - SPI@1MHz (16bit RAW数据) \
+IN003：OD - CAN@500kbps (轮速脉冲计数) \
+IN004：视觉 - MIPI CSI-2@720P 30fps
+
+输出 \
+HSIOUT001：定位结果 - Ethernet/UDP@100Hz
+HSIOUT002：故障码 - CAN@10Hz (SAE J1939)
+
+**测试案例推荐**
+
+功能测试 \
+TC001：模拟GNSS失效，验证INS/OD/视觉接力定位 \
+TC002：注入视觉遮挡，测试SLAM重定位能力
+
+性能测试 \
+TC003：80km/h动态场景下验证定位精度（RTK基准对比）\
+TC004：-40℃低温启动时间测试
+
+安全测试 \
+TC005：注入INS零偏突变，验证故障检测响应时间 \
+TC006：RAM ECC错误注入测试
+
+**沟通纪要**
+需要会议纪要支持，编写完成后需要将文件分发至上下游。
+
+| 日期       | 参与方         | 议题                | 决议                     |
+|------------|----------------|---------------------|--------------------------|
+| 2025-08-03 |     |      |   |
+| 2025-08-10 |        | ASIL-B分解方案      | 采用双核锁步机制（见FSR）|
+| 整改记录   |                |                     |                          |
+| 问题ID     | 描述           | 整改措施            | 闭环日期                 |
+| PQ001      |  |    |                |
+
+### 5.2 软件架构设计
+
+
+
+
+### 5.3 软件详细设计
+
+#### 5.3.1 基础数据计算模块
+
+
+#### 5.3.2 地球常量管理模块
+
+
+#### 5.3.3 IMU模块
+
+
+#### 5.3.4 GNSS模块
+
+
+#### 5.3.5 OD模块
+
+
+#### 5.3.6 融合模块
+
+
+#### 5.3.7 数据解析模块
+
+
+#### 5.3.8 日志模块
+
+
+#### 5.3.9 数据统计模块
+
+
+
+### 5.4 单元测试
+#### 5.4.1 基础数据计算模块测试用例
+
+#### 5.4.2 地球常量管理模块
+
+
+### 5.5 软件模块测试
+
+
+
+### 5.6 软件系统测试
+
+
 
 
 
