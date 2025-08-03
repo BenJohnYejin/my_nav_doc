@@ -6308,6 +6308,1591 @@ int saveconfigs(const char* file, const char* mode, const char* comment,
 }
 #endif
 
+
+/* inner product ---------------------------------------------------------------
+* inner product of vectors
+* args   : double *a,*b     I   vector a,b (n x 1)
+*          int    n         I   size of vector a,b
+* return : a'*b
+*-----------------------------------------------------------------------------*/
+double dot(const double* a, const double* b, int n)
+{
+	double c = 0.0;
+
+	while (--n >= 0) c += a[n] * b[n];
+	return c;
+}
+/* outer product of 3d vectors -------------------------------------------------
+* outer product of 3d vectors
+* args   : double *a,*b     I   vector a,b (3 x 1)
+*          double *c        O   outer product (a x b) (3 x 1)
+* return : none
+*-----------------------------------------------------------------------------*/
+void cross3(const double* a, const double* b, double* c)
+{
+	c[0] = a[1] * b[2] - a[2] * b[1];
+	c[1] = a[2] * b[0] - a[0] * b[2];
+	c[2] = a[0] * b[1] - a[1] * b[0];
+}
+/* normalize 3d vector ---------------------------------------------------------
+* normalize 3d vector
+* args   : double *a        I   vector a (3 x 1)
+*          double *b        O   normlized vector (3 x 1) || b || = 1
+* return : status (1:ok,0:error)
+*-----------------------------------------------------------------------------*/
+int normv3(const double* a, double* b)
+{
+	double r;
+	if ((r = norm(a, 3)) <= 0.0) return 0;
+	b[0] = a[0] / r;
+	b[1] = a[1] / r;
+	b[2] = a[2] / r;
+	return 1;
+}
+/* screen by time --------------------------------------------------------------
+* screening by time start, time end, and time interval
+* args   : gtime_t time  I      time
+*          gtime_t ts    I      time start (ts.time==0:no screening by ts)
+*          gtime_t te    I      time end   (te.time==0:no screening by te)
+*          double  tint  I      time interval (s) (0.0:no screen by tint)
+* return : 1:on condition, 0:not on condition
+*-----------------------------------------------------------------------------*/
+int screent(gtime_t time, gtime_t ts, gtime_t te, double tint)
+{
+	return (tint <= 0.0 || fmod(time2gpst(time, NULL) + DTTOL, tint) <= DTTOL * 2.0) &&
+		(ts.time == 0 || timediff(time, ts) >= -DTTOL) &&
+		(te.time == 0 || timediff(time, te) < DTTOL);
+}
+/* satellite system+prn/slot number to satellite number ------------------------
+* convert satellite system+prn/slot number to satellite number
+* args   : int    sys       I   satellite system (SYS_GPS,SYS_GLO,...)
+*          int    prn       I   satellite prn/slot number
+* return : satellite number (0:error)
+*-----------------------------------------------------------------------------*/
+int satno(int sys, int prn)
+{
+	if (prn <= 0) return 0;
+	switch (sys) {
+	case SYS_GPS:
+		if (prn < MINPRNGPS || MAXPRNGPS < prn) return 0;
+		return prn - MINPRNGPS + 1;
+	case SYS_GLO:
+		if (prn < MINPRNGLO || MAXPRNGLO < prn) return 0;
+		return NSATGPS + prn - MINPRNGLO + 1;
+	case SYS_GAL:
+		if (prn < MINPRNGAL || MAXPRNGAL < prn) return 0;
+		return NSATGPS + NSATGLO + prn - MINPRNGAL + 1;
+	case SYS_QZS:
+		if (prn < MINPRNQZS || MAXPRNQZS < prn) return 0;
+		return NSATGPS + NSATGLO + NSATGAL + prn - MINPRNQZS + 1;
+	case SYS_CMP:
+		if (prn < MINPRNCMP || MAXPRNCMP < prn) return 0;
+		return NSATGPS + NSATGLO + NSATGAL + NSATQZS + prn - MINPRNCMP + 1;
+	case SYS_LEO:
+		if (prn < MINPRNLEO || MAXPRNLEO < prn) return 0;
+		return NSATGPS + NSATGLO + NSATGAL + NSATQZS + NSATCMP + prn - MINPRNLEO + 1;
+	case SYS_SBS:
+		if (prn < MINPRNSBS || MAXPRNSBS < prn) return 0;
+		return NSATGPS + NSATGLO + NSATGAL + NSATQZS + NSATCMP + NSATLEO + prn - MINPRNSBS + 1;
+	}
+	return 0;
+}
+/* satellite number to satellite system ----------------------------------------
+* convert satellite number to satellite system
+* args   : int    sat       I   satellite number (1-MAXSAT)
+*          int    *prn      IO  satellite prn/slot number (NULL: no output)
+* return : satellite system (SYS_GPS,SYS_GLO,...)
+*-----------------------------------------------------------------------------*/
+int satsys(int sat, int* prn)
+{
+	int sys = SYS_NONE;
+	if (sat <= 0 || MAXSAT < sat) sat = 0;
+	else if (sat <= NSATGPS) {
+		sys = SYS_GPS; sat += MINPRNGPS - 1;
+	}
+	else if ((sat -= NSATGPS) <= NSATGLO) {
+		sys = SYS_GLO; sat += MINPRNGLO - 1;
+	}
+	else if ((sat -= NSATGLO) <= NSATGAL) {
+		sys = SYS_GAL; sat += MINPRNGAL - 1;
+	}
+	else if ((sat -= NSATGAL) <= NSATQZS) {
+		sys = SYS_QZS; sat += MINPRNQZS - 1;
+	}
+	else if ((sat -= NSATQZS) <= NSATCMP) {
+		sys = SYS_CMP; sat += MINPRNCMP - 1;
+	}
+	else if ((sat -= NSATCMP) <= NSATLEO) {
+		sys = SYS_LEO; sat += MINPRNLEO - 1;
+	}
+	else if ((sat -= NSATLEO) <= NSATSBS) {
+		sys = SYS_SBS; sat += MINPRNSBS - 1;
+	}
+	else sat = 0;
+	if (prn) *prn = sat;
+	return sys;
+}
+/* satellite id to satellite number --------------------------------------------
+* convert satellite id to satellite number
+* args   : char   *id       I   satellite id (nn,Gnn,Rnn,Enn,Jnn,Cnn or Snn)
+* return : satellite number (0: error)
+* notes  : 120-138 and 193-195 are also recognized as sbas and qzss
+*-----------------------------------------------------------------------------*/
+int satid2no(const char* id)
+{
+	int sys, prn;
+	char code;
+
+	if (sscanf(id, "%d", &prn) == 1) {
+		if (MINPRNGPS <= prn && prn <= MAXPRNGPS) sys = SYS_GPS;
+		else if (MINPRNSBS <= prn && prn <= MAXPRNSBS) sys = SYS_SBS;
+		else if (MINPRNQZS <= prn && prn <= MAXPRNQZS) sys = SYS_QZS;
+		else return 0;
+		return satno(sys, prn);
+	}
+	if (sscanf(id, "%c%d", &code, &prn) < 2) return 0;
+
+	switch (code) {
+	case 'G': sys = SYS_GPS; prn += MINPRNGPS - 1; break;
+	case 'R': sys = SYS_GLO; prn += MINPRNGLO - 1; break;
+	case 'E': sys = SYS_GAL; prn += MINPRNGAL - 1; break;
+	case 'J': sys = SYS_QZS; prn += MINPRNQZS - 1; break;
+	case 'C': sys = SYS_CMP; prn += MINPRNCMP - 1; break;
+	case 'L': sys = SYS_LEO; prn += MINPRNLEO - 1; break;
+	case 'S': sys = SYS_SBS; prn += 100; break;
+	default: return 0;
+	}
+	return satno(sys, prn);
+}
+
+/* satellite number to satellite id --------------------------------------------
+* convert satellite number to satellite id
+* args   : int    sat       I   satellite number
+*          char   *id       O   satellite id (Gnn,Rnn,Enn,Jnn,Cnn or nnn)
+* return : none
+*-----------------------------------------------------------------------------*/
+void satno2id(int sat, char* id)
+{
+	int prn;
+	switch (satsys(sat, &prn)) {
+	case SYS_GPS: sprintf(id, "G%02d", prn - MINPRNGPS + 1); return;
+	case SYS_GLO: sprintf(id, "R%02d", prn - MINPRNGLO + 1); return;
+	case SYS_GAL: sprintf(id, "E%02d", prn - MINPRNGAL + 1); return;
+	case SYS_QZS: sprintf(id, "J%02d", prn - MINPRNQZS + 1); return;
+	case SYS_CMP: sprintf(id, "C%02d", prn - MINPRNCMP + 1); return;
+	case SYS_LEO: sprintf(id, "L%02d", prn - MINPRNLEO + 1); return;
+	case SYS_SBS: sprintf(id, "%03d", prn); return;
+	}
+	strcpy(id, "");
+}
+/* test excluded satellite -----------------------------------------------------
+* test excluded satellite
+* args   : int    sat       I   satellite number
+*          int    svh       I   sv health flag
+*          prcopt_t *opt    I   processing options (NULL: not used)
+* return : status (1:excluded,0:not excluded)
+*-----------------------------------------------------------------------------*/
+int satexclude(int sat, int svh, int *exsats, int navsys)
+{
+	int sys = satsys(sat, NULL);
+
+	if (svh < 0) return 1; /* ephemeris unavailable */
+
+	if (exsats) {
+		if (exsats[sat - 1] == 1) return 1; /* excluded satellite */
+		if (exsats[sat - 1] == 2) return 0; /* included satellite */
+		if (!(sys & navsys)) return 1; /* unselected sat sys */
+	}
+	if (sys == SYS_QZS) svh &= 0xFE; /* mask QZSS LEX health */
+	if (svh) {
+		trace(3, "unhealthy satellite: sat=%3d svh=%02X\n", sat, svh);
+		return 1;
+	}
+	return 0;
+}
+/* test SNR mask ---------------------------------------------------------------
+* test SNR mask
+* args   : int    base      I   rover or base-station (0:rover,1:base station)
+*          int    freq      I   frequency (0:L1,1:L2,2:L3,...)
+*          double el        I   elevation angle (rad)
+*          double snr       I   C/N0 (dBHz)
+*          snrmask_t *mask  I   SNR mask
+* return : status (1:masked,0:unmasked)
+*-----------------------------------------------------------------------------*/
+int testsnr(int base, int freq, double el, double snr, const snrmask_t* mask)
+{
+	double minsnr, a;
+	int i;
+
+	if (!mask->ena[base] || freq < 0 || freq >= NFREQ) return 0;
+
+	a = (el / DEG + 5.0) / 10.0;
+	i = (int)floor(a); a -= i;
+	if (i < 1) minsnr = mask->mask[freq][0];
+	else if (i > 8) minsnr = mask->mask[freq][8];
+	else minsnr = (1.0 - a) * mask->mask[freq][i - 1] + a * mask->mask[freq][i];
+
+	return snr < minsnr;
+}
+/* obs type string to obs code -------------------------------------------------
+* convert obs code type string to obs code
+* args   : char   *str      I   obs code string ("1C","1P","1Y",...)
+* return : obs code (CODE_???)
+* notes  : obs codes are based on RINEX 3.04
+*-----------------------------------------------------------------------------*/
+extern uint8_t obs2code(const char* obs)
+{
+	int i;
+	for (i = 1; *obscodes[i]; i++) {
+		if (strcmp(obscodes[i], obs)) continue;
+		return (uint8_t)i;
+	}
+	return CODE_NONE;
+}
+/* obs type string to obs code -------------------------------------------------
+* convert obs code type string to obs code
+* args   : char   *str   I      obs code string ("1C","1P","1Y",...)
+*          int    *freq  IO     frequency (1:L1,2:L2,3:L5,4:L6,5:L7,6:L8,0:err)
+*                               (NULL: no output)
+* return : obs code (CODE_???)
+* notes  : obs codes are based on reference [6] and qzss extension
+*-----------------------------------------------------------------------------*/
+unsigned char obs2code(const char* obs, int* freq)
+{
+	int i;
+	if (freq) *freq = 0;
+	for (i = 1; *obscodes[i]; i++) {
+		if (strcmp(obscodes[i], obs)) continue;
+		if (freq) *freq = obsfreqs[i];
+		return (unsigned char)i;
+	}
+	return CODE_NONE;
+}
+/* GPS obs code to frequency -------------------------------------------------*/
+static int code2freq_GPS(uint8_t code, double* freq)
+{
+	char* obs = code2obs(code);
+
+	switch (obs[0]) {
+	case '1': *freq = FREQ1; return 0; /* L1 */
+	case '2': *freq = FREQ2; return 1; /* L2 */
+	case '5': *freq = FREQ5; return 2; /* L5 */
+	}
+	return -1;
+}
+/* GLONASS obs code to frequency ---------------------------------------------*/
+static int code2freq_GLO(uint8_t code, int fcn, double* freq)
+{
+	char* obs = code2obs(code);
+
+	if (fcn < -7 || fcn>6) return -1;
+
+	switch (obs[0]) {
+	case '1': *freq = FREQ1_GLO + DFRQ1_GLO * fcn; return 0; /* G1 */
+	case '2': *freq = FREQ2_GLO + DFRQ2_GLO * fcn; return 1; /* G2 */
+	case '3': *freq = FREQ3_GLO;               return 2; /* G3 */
+	case '4': *freq = FREQ1a_GLO;              return 0; /* G1a */
+	case '6': *freq = FREQ2a_GLO;              return 1; /* G2a */
+	}
+	return -1;
+}
+/* Galileo obs code to frequency ---------------------------------------------*/
+static int code2freq_GAL(uint8_t code, double* freq)
+{
+	char* obs = code2obs(code);
+
+	switch (obs[0]) {
+	case '1': *freq = FREQ1; return 0; /* E1 */
+	case '7': *freq = FREQ7; return 1; /* E5b */
+	case '5': *freq = FREQ5; return 2; /* E5a */
+	case '6': *freq = FREQ6; return 3; /* E6 */
+	case '8': *freq = FREQ8; return 4; /* E5ab */
+	}
+	return -1;
+}
+/* QZSS obs code to frequency ------------------------------------------------*/
+static int code2freq_QZS(uint8_t code, double* freq)
+{
+	char* obs = code2obs(code);
+
+	switch (obs[0]) {
+	case '1': *freq = FREQ1; return 0; /* L1 */
+	case '2': *freq = FREQ2; return 1; /* L2 */
+	case '5': *freq = FREQ5; return 2; /* L5 */
+	case '6': *freq = FREQ6; return 3; /* L6 */
+	}
+	return -1;
+}
+/* SBAS obs code to frequency ------------------------------------------------*/
+static int code2freq_SBS(uint8_t code, double* freq)
+{
+	char* obs = code2obs(code);
+
+	switch (obs[0]) {
+	case '1': *freq = FREQ1; return 0; /* L1 */
+	case '5': *freq = FREQ5; return 1; /* L5 */
+	}
+	return -1;
+}
+/* BDS obs code to frequency -------------------------------------------------*/
+static int code2freq_BDS(uint8_t code, double* freq)
+{
+	char* obs = code2obs(code);
+
+	switch (obs[0]) {
+	case '1': *freq = FREQ1;     return 0; /* B1C */
+	case '2': *freq = FREQ1_CMP; return 0; /* B1I */
+	case '7': *freq = FREQ2_CMP; return 1; /* B2I/B2b */
+	case '5': *freq = FREQ5;     return 2; /* B2a */
+	case '6': *freq = FREQ3_CMP; return 3; /* B3 */
+	case '8': *freq = FREQ8;     return 4; /* B2ab */
+	}
+	return -1;
+}
+/* NavIC obs code to frequency -----------------------------------------------*/
+static int code2freq_IRN(uint8_t code, double* freq)
+{
+	char* obs = code2obs(code);
+
+	switch (obs[0]) {
+	case '5': *freq = FREQ5; return 0; /* L5 */
+	case '9': *freq = FREQ9; return 1; /* S */
+	}
+	return -1;
+}
+/* system and obs code to frequency index --------------------------------------
+* convert system and obs code to frequency index
+* args   : int    sys       I   satellite system (SYS_???)
+*          uint8_t code     I   obs code (CODE_???)
+* return : frequency index (-1: error)
+*                       0     1     2     3     4
+*           --------------------------------------
+*            GPS       L1    L2    L5     -     -
+*            GLONASS   G1    G2    G3     -     -  (G1=G1,G1a,G2=G2,G2a)
+*            Galileo   E1    E5b   E5a   E6   E5ab
+*            QZSS      L1    L2    L5    L6     -
+*            SBAS      L1     -    L5     -     -
+*            BDS       B1    B2    B2a   B3   B2ab (B1=B1I,B1C,B2=B2I,B2b)
+*            NavIC     L5     S     -     -     -
+*-----------------------------------------------------------------------------*/
+extern int code2idx(int sys, uint8_t code)
+{
+	double freq;
+
+	switch (sys) {
+	case SYS_GPS: return code2freq_GPS(code, &freq);
+	case SYS_GLO: return code2freq_GLO(code, 0, &freq);
+	case SYS_GAL: return code2freq_GAL(code, &freq);
+	case SYS_QZS: return code2freq_QZS(code, &freq);
+	case SYS_SBS: return code2freq_SBS(code, &freq);
+	case SYS_CMP: return code2freq_BDS(code, &freq);
+	case SYS_IRN: return code2freq_IRN(code, &freq);
+	}
+	return -1;
+}
+/* obs code to obs code string -------------------------------------------------
+* convert obs code to obs code string
+* args   : uint8_t code     I   obs code (CODE_???)
+* return : obs code string ("1C","1P","1P",...)
+* notes  : obs codes are based on RINEX 3.04
+*-----------------------------------------------------------------------------*/
+char* code2obs(uint8_t code)
+{
+	if (code <= CODE_NONE || MAXCODE < code) return "";
+	return obscodes[code];
+}
+/* obs code to obs code string -------------------------------------------------
+* convert obs code to obs code string
+* args   : unsigned char code I obs code (CODE_???)
+*          int    *freq  IO     frequency (1:L1,2:L2,3:L5,4:L6,5:L7,6:L8,0:err)
+*                               (NULL: no output)
+* return : obs code string ("1C","1P","1P",...)
+* notes  : obs codes are based on reference [6] and qzss extension
+*-----------------------------------------------------------------------------*/
+char* code2obs(unsigned char code, int* freq)
+{
+	if (freq) *freq = 0;
+	if (code <= CODE_NONE || MAXCODE < code) return "";
+	if (freq) *freq = obsfreqs[code];
+	return obscodes[code];
+}
+/* set code priority -----------------------------------------------------------
+* set code priority for multiple codes in a frequency
+* args   : int    sys     I     system (or of SYS_???)
+*          int    freq    I     frequency (1:L1,2:L2,3:L5,4:L6,5:L7,6:L8)
+*          char   *pri    I     priority of codes (series of code characters)
+*                               (higher priority precedes lower)
+* return : none
+*-----------------------------------------------------------------------------*/
+void setcodepri(int sys, int freq, const char* pri)
+{
+	trace(3, "setcodepri:sys=%d freq=%d pri=%s\n", sys, freq, pri);
+
+	if (freq <= 0 || MAXFREQ < freq) return;
+	if (sys & SYS_GPS) strcpy(codepris[0][freq - 1], pri);
+	if (sys & SYS_GLO) strcpy(codepris[1][freq - 1], pri);
+	if (sys & SYS_GAL) strcpy(codepris[2][freq - 1], pri);
+	if (sys & SYS_QZS) strcpy(codepris[3][freq - 1], pri);
+	if (sys & SYS_SBS) strcpy(codepris[4][freq - 1], pri);
+	if (sys & SYS_CMP) strcpy(codepris[5][freq - 1], pri);
+}
+/* get code priority -----------------------------------------------------------
+* get code priority for multiple codes in a frequency
+* args   : int    sys     I     system (SYS_???)
+*          unsigned char code I obs code (CODE_???)
+*          char   *opt    I     code options (NULL:no option)
+* return : priority (15:highest-1:lowest,0:error)
+*-----------------------------------------------------------------------------*/
+int getcodepri(int sys, unsigned char code, const char* opt)
+{
+	const char* p, * optstr;
+	char* obs, str[8] = "";
+	int i, j;
+
+	switch (sys) {
+	case SYS_GPS: i = 0; optstr = "-GL%2s"; break;
+	case SYS_GLO: i = 1; optstr = "-RL%2s"; break;
+	case SYS_GAL: i = 2; optstr = "-EL%2s"; break;
+	case SYS_QZS: i = 3; optstr = "-JL%2s"; break;
+	case SYS_SBS: i = 4; optstr = "-SL%2s"; break;
+	case SYS_CMP: i = 5; optstr = "-CL%2s"; break;
+	default: return 0;
+	}
+	obs = code2obs(code, &j);
+
+	/* parse code options */
+	for (p = opt; p && (p = strchr(p, '-')); p++) {
+		if (sscanf(p, optstr, str) < 1 || str[0] != obs[0]) continue;
+		return str[1] == obs[1] ? 15 : 0;
+	}
+	/* search code priority */
+	return (p = strchr(codepris[i][j - 1], obs[1])) ? 14 - (int)(p - codepris[i][j - 1]) : 0;
+}
+
+/* string to number ------------------------------------------------------------
+* convert substring in string to number
+* args   : char   *s        I   string ("... nnn.nnn ...")
+*          int    i,n       I   substring position and width
+* return : converted number (0.0:error)
+*-----------------------------------------------------------------------------*/
+double str2num(const char* s, int i, int n)
+{
+	double value;
+	char str[256], * p = str;
+
+	if (i < 0 || (int)strlen(s) < i || (int)sizeof(str) - 1 < n) return 0.0;
+	for (s += i; *s && --n >= 0; s++) *p++ = *s == 'd' || *s == 'D' ? 'E' : *s; *p = '\0';
+	return sscanf(str, "%lf", &value) == 1 ? value : 0.0;
+}
+/* string to time --------------------------------------------------------------
+* convert substring in string to gtime_t struct
+* args   : char   *s        I   string ("... yyyy mm dd hh mm ss ...")
+*          int    i,n       I   substring position and width
+*          gtime_t *t       O   gtime_t struct
+* return : status (0:ok,0>:error)
+*-----------------------------------------------------------------------------*/
+int str2time(const char* s, int i, int n, gtime_t* t)
+{
+	double ep_[6];
+	char str[256], * p = str;
+
+	if (i < 0 || (int)strlen(s) < i || (int)sizeof(str) - 1 < i) return -1;
+	for (s += i; *s && --n >= 0;) *p++ = *s++; *p = '\0';
+	if (sscanf(str, "%lf %lf %lf %lf %lf %lf", ep_, ep_ + 1, ep_ + 2, ep_ + 3, ep_ + 4, ep_ + 5) < 6)
+		return -1;
+	if (ep_[0] < 100.0) ep_[0] += ep_[0] < 80.0 ? 2000.0 : 1900.0;
+	*t = epoch2time(ep_);
+	return 0;
+}
+/* convert calendar day/time to time -------------------------------------------
+* convert calendar day/time to gtime_t struct
+* args   : double *ep_       I   day/time {year,month,day,hour,min,sec}
+* return : gtime_t struct
+* notes  : proper in 1970-2037 or 1970-2099 (64bit time_t)
+*-----------------------------------------------------------------------------*/
+gtime_t epoch2time(const double* ep_)
+{
+	const int doy[] = { 1,32,60,91,121,152,182,213,244,274,305,335 };
+	gtime_t time = { 0 };
+	int days, sec, year = (int)ep_[0], mon = (int)ep_[1], day = (int)ep_[2];
+
+	if (year < 1970 || 2099 < year || mon < 1 || 12 < mon) return time;
+
+	/* leap year if year%4==0 in 1901-2099 */
+	days = (year - 1970) * 365 + (year - 1969) / 4 + doy[mon - 1] + day - 2 + (year % 4 == 0 && mon >= 3 ? 1 : 0);
+	sec = (int)floor(ep_[5]);
+	time.time = (time_t)days * 86400 + (int)ep_[3] * 3600 + (int)ep_[4] * 60 + sec;
+	time.sec = ep_[5] - sec;
+	return time;
+}
+/* time to calendar day/time ---------------------------------------------------
+* convert gtime_t struct to calendar day/time
+* args   : gtime_t t        I   gtime_t struct
+*          double *ep_       O   day/time {year,month,day,hour,min,sec}
+* return : none
+* notes  : proper in 1970-2037 or 1970-2099 (64bit time_t)
+*-----------------------------------------------------------------------------*/
+void time2epoch(gtime_t t, double* ep_)
+{
+	const int mday[] = { /* # of days in a month */
+		31,28,31,30,31,30,31,31,30,31,30,31,31,28,31,30,31,30,31,31,30,31,30,31,
+		31,29,31,30,31,30,31,31,30,31,30,31,31,28,31,30,31,30,31,31,30,31,30,31
+	};
+	int days, sec, mon, day;
+
+	/* leap year if year%4==0 in 1901-2099 */
+	days = (int)(t.time / 86400);
+	sec = (int)(t.time - (time_t)days * 86400);
+	for (day = days % 1461, mon = 0; mon < 48; mon++) {
+		if (day >= mday[mon]) day -= mday[mon]; else break;
+	}
+	ep_[0] = 1970 + days / 1461 * 4 + mon / 12; ep_[1] = mon % 12 + 1; ep_[2] = day + 1;
+	ep_[3] = sec / 3600; ep_[4] = sec % 3600 / 60; ep_[5] = sec % 60 + t.sec;
+}
+/* gps time to time ------------------------------------------------------------
+* convert week and tow in gps time to gtime_t struct
+* args   : int    week      I   week number in gps time
+*          double sec       I   time of week in gps time (s)
+* return : gtime_t struct
+*-----------------------------------------------------------------------------*/
+gtime_t gpst2time(int week, double sec)
+{
+	gtime_t t = epoch2time(gpst0);
+
+	if (sec < -1E9 || 1E9 < sec) sec = 0.0;
+	t.time += 86400 * 7 * week + (int)sec;
+	t.sec = sec - (int)sec;
+	return t;
+}
+/* time to gps time ------------------------------------------------------------
+* convert gtime_t struct to week and tow in gps time
+* args   : gtime_t t        I   gtime_t struct
+*          int    *week     IO  week number in gps time (NULL: no output)
+* return : time of week in gps time (s)
+*-----------------------------------------------------------------------------*/
+double time2gpst(gtime_t t, int* week)
+{
+	gtime_t t0 = epoch2time(gpst0);
+	time_t sec = t.time - t0.time;
+	int w = (int)(sec / (86400 * 7));
+
+	if (week) *week = w;
+	return (double)(sec - w * 86400 * 7) + t.sec;
+}
+/* galileo system time to time -------------------------------------------------
+* convert week and tow in galileo system time (gst) to gtime_t struct
+* args   : int    week      I   week number in gst
+*          double sec       I   time of week in gst (s)
+* return : gtime_t struct
+*-----------------------------------------------------------------------------*/
+gtime_t gst2time(int week, double sec)
+{
+	gtime_t t = epoch2time(gst0);
+
+	if (sec < -1E9 || 1E9 < sec) sec = 0.0;
+	t.time += 86400 * 7 * week + (int)sec;
+	t.sec = sec - (int)sec;
+	return t;
+}
+/* time to galileo system time -------------------------------------------------
+* convert gtime_t struct to week and tow in galileo system time (gst)
+* args   : gtime_t t        I   gtime_t struct
+*          int    *week     IO  week number in gst (NULL: no output)
+* return : time of week in gst (s)
+*-----------------------------------------------------------------------------*/
+double time2gst(gtime_t t, int* week)
+{
+	gtime_t t0 = epoch2time(gst0);
+	time_t sec = t.time - t0.time;
+	int w = (int)(sec / (86400 * 7));
+
+	if (week) *week = w;
+	return (double)(sec - w * 86400 * 7) + t.sec;
+}
+/* beidou time (bdt) to time ---------------------------------------------------
+* convert week and tow in beidou time (bdt) to gtime_t struct
+* args   : int    week      I   week number in bdt
+*          double sec       I   time of week in bdt (s)
+* return : gtime_t struct
+*-----------------------------------------------------------------------------*/
+gtime_t bdt2time(int week, double sec)
+{
+	gtime_t t = epoch2time(bdt0);
+
+	if (sec < -1E9 || 1E9 < sec) sec = 0.0;
+	t.time += 86400 * 7 * week + (int)sec;
+	t.sec = sec - (int)sec;
+	return t;
+}
+/* time to beidouo time (bdt) --------------------------------------------------
+* convert gtime_t struct to week and tow in beidou time (bdt)
+* args   : gtime_t t        I   gtime_t struct
+*          int    *week     IO  week number in bdt (NULL: no output)
+* return : time of week in bdt (s)
+*-----------------------------------------------------------------------------*/
+double time2bdt(gtime_t t, int* week)
+{
+	gtime_t t0 = epoch2time(bdt0);
+	time_t sec = t.time - t0.time;
+	int w = (int)(sec / (86400 * 7));
+
+	if (week) *week = w;
+	return (double)(sec - w * 86400 * 7) + t.sec;
+}
+/* add time --------------------------------------------------------------------
+* add time to gtime_t struct
+* args   : gtime_t t        I   gtime_t struct
+*          double sec       I   time to add (s)
+* return : gtime_t struct (t+sec)
+*-----------------------------------------------------------------------------*/
+gtime_t timeadd(gtime_t t, double sec)
+{
+	double tt;
+
+	t.sec += sec; tt = floor(t.sec); t.time += (int)tt; t.sec -= tt;
+	return t;
+}
+/* time difference -------------------------------------------------------------
+* difference between gtime_t structs
+* args   : gtime_t t1,t2    I   gtime_t structs
+* return : time difference (t1-t2) (s)
+*-----------------------------------------------------------------------------*/
+double timediff(gtime_t t1, gtime_t t2)
+{
+	return t1.time - t2.time + t1.sec - t2.sec;
+}
+
+/* read leap seconds table -----------------------------------------------------
+* read leap seconds table
+* args   : char    *file    I   leap seconds table file
+* return : status (1:ok,0:error)
+* notes  : (1) The records in the table file cosist of the following fields:
+*              year month day hour min sec UTC-GPST(s)
+*          (2) The date and time indicate the start UTC time for the UTC-GPST
+*          (3) The date and time should be descending order.
+*-----------------------------------------------------------------------------*/
+int read_leaps(const char* file)
+{
+	FILE* fp;
+	char buff[256], * p;
+	int i, n = 0, ep_[6], ls;
+
+	if (!(fp = fopen(file, "r"))) return 0;
+
+	while (fgets(buff, sizeof(buff), fp) && n < MAXLEAPS) {
+		if ((p = strchr(buff, '#'))) *p = '\0';
+		if (sscanf(buff, "%d %d %d %d %d %d %d", ep_, ep_ + 1, ep_ + 2, ep_ + 3, ep_ + 4, ep_ + 5,
+			&ls) < 7) continue;
+		for (i = 0; i < 6; i++) leaps[n][i] = ep_[i];
+		leaps[n++][6] = ls;
+	}
+	for (i = 0; i < 7; i++) leaps[n][i] = 0.0;
+	fclose(fp);
+	return 1;
+}
+/* gpstime to utc --------------------------------------------------------------
+* convert gpstime to utc considering leap seconds
+* args   : gtime_t t        I   time expressed in gpstime
+* return : time expressed in utc
+* notes  : ignore slight time offset under 100 ns
+*-----------------------------------------------------------------------------*/
+gtime_t gpst2utc(gtime_t t)
+{
+	gtime_t tu;
+	int i;
+
+	for (i = 0; leaps[i][0] > 0; i++) {
+		tu = timeadd(t, leaps[i][6]);
+		if (timediff(tu, epoch2time(leaps[i])) >= 0.0) return tu;
+	}
+	return t;
+}
+/* utc to gpstime --------------------------------------------------------------
+* convert utc to gpstime considering leap seconds
+* args   : gtime_t t        I   time expressed in utc
+* return : time expressed in gpstime
+* notes  : ignore slight time offset under 100 ns
+*-----------------------------------------------------------------------------*/
+gtime_t utc2gpst(gtime_t t)
+{
+	int i;
+
+	for (i = 0; leaps[i][0] > 0; i++) {
+		if (timediff(t, epoch2time(leaps[i])) >= 0.0) return timeadd(t, -leaps[i][6]);
+	}
+	return t;
+}
+/* gpstime to bdt --------------------------------------------------------------
+* convert gpstime to bdt (beidou navigation satellite system time)
+* args   : gtime_t t        I   time expressed in gpstime
+* return : time expressed in bdt
+* notes  : ref [8] 3.3, 2006/1/1 00:00 BDT = 2006/1/1 00:00 UTC
+*          no leap seconds in BDT
+*          ignore slight time offset under 100 ns
+*-----------------------------------------------------------------------------*/
+gtime_t gpst2bdt(gtime_t t)
+{
+	return timeadd(t, -14.0);
+}
+/* bdt to gpstime --------------------------------------------------------------
+* convert bdt (beidou navigation satellite system time) to gpstime
+* args   : gtime_t t        I   time expressed in bdt
+* return : time expressed in gpstime
+* notes  : see gpst2bdt()
+*-----------------------------------------------------------------------------*/
+gtime_t bdt2gpst(gtime_t t)
+{
+	return timeadd(t, 14.0);
+}
+/* time to day and sec -------------------------------------------------------*/
+static double time2sec(gtime_t time, gtime_t* day)
+{
+	double ep_[6], sec;
+	time2epoch(time, ep_);
+	sec = ep_[3] * 3600.0 + ep_[4] * 60.0 + ep_[5];
+	ep_[3] = ep_[4] = ep_[5] = 0.0;
+	*day = epoch2time(ep_);
+	return sec;
+}
+/* utc to gmst -----------------------------------------------------------------
+* convert utc to gmst (Greenwich mean sidereal time)
+* args   : gtime_t t        I   time expressed in utc
+*          double ut1_utc   I   UT1-UTC (s)
+* return : gmst (rad)
+*-----------------------------------------------------------------------------*/
+double utc2gmst(gtime_t t, double ut1_utc)
+{
+	const double ep2000[] = { 2000,1,1,12,0,0 };
+	gtime_t tut, tut0;
+	double ut, t1, t2, t3, gmst0, gmst;
+
+	tut = timeadd(t, ut1_utc);
+	ut = time2sec(tut, &tut0);
+	t1 = timediff(tut0, epoch2time(ep2000)) / 86400.0 / 36525.0;
+	t2 = t1 * t1; t3 = t2 * t1;
+	gmst0 = 24110.54841 + 8640184.812866 * t1 + 0.093104 * t2 - 6.2E-6 * t3;
+	gmst = gmst0 + 1.002737909350795 * ut;
+
+	return fmod(gmst, 86400.0) * PI / 43200.0; /* 0 <= gmst <= 2*PI */
+}
+/* time to string --------------------------------------------------------------
+* convert gtime_t struct to string
+* args   : gtime_t t        I   gtime_t struct
+*          char   *s        O   string ("yyyy/mm/dd hh:mm:ss.ssss")
+*          int    n         I   number of decimals
+* return : none
+*-----------------------------------------------------------------------------*/
+void time2str(gtime_t t, char* s, int n)
+{
+	double ep_[6];
+
+	if (n < 0) n = 0; else if (n > 12) n = 12;
+	if (1.0 - t.sec < 0.5 / 1000) { t.time++; t.sec = 0.0; };
+	time2epoch(t, ep_);
+	sprintf(s, "%04.0f/%02.0f/%02.0f %02.0f:%02.0f:%0*.*f", ep_[0], ep_[1], ep_[2],
+		ep_[3], ep_[4], n <= 0 ? 2 : n + 3, n <= 0 ? 0 : n, ep_[5]);
+}
+/* get time string -------------------------------------------------------------
+* get time string
+* args   : gtime_t t        I   gtime_t struct
+*          int    n         I   number of decimals
+* return : time string
+* notes  : not reentrant, do not use multiple in a function
+*-----------------------------------------------------------------------------*/
+char* time_str(gtime_t t, int n)
+{
+	static char buff[64];
+	time2str(t, buff, n);
+	return buff;
+}
+/* time to day of year ---------------------------------------------------------
+* convert time to day of year
+* args   : gtime_t t        I   gtime_t struct
+* return : day of year (days)
+*-----------------------------------------------------------------------------*/
+double time2doy(gtime_t t)
+{
+	double ep_[6];
+
+	time2epoch(t, ep_);
+	ep_[1] = ep_[2] = 1.0; ep_[3] = ep_[4] = ep_[5] = 0.0;
+	return timediff(t, epoch2time(ep_)) / 86400.0 + 1.0;
+}
+
+/* convert degree to deg-min-sec -----------------------------------------------
+* convert degree to degree-minute-second
+* args   : double deg       I   degree
+*          double *dms      O   degree-minute-second {deg,min,sec}
+* return : none
+*-----------------------------------------------------------------------------*/
+void deg2dms(double deg, double* dms)
+{
+	double sign = deg < 0.0 ? -1.0 : 1.0, a = fabs(deg);
+	dms[0] = floor(a); a = (a - dms[0]) * 60.0;
+	dms[1] = floor(a); a = (a - dms[1]) * 60.0;
+	dms[2] = a; dms[0] *= sign;
+}
+/* convert deg-min-sec to degree -----------------------------------------------
+* convert degree-minute-second to degree
+* args   : double *dms      I   degree-minute-second {deg,min,sec}
+* return : degree
+*-----------------------------------------------------------------------------*/
+double dms2deg(const double* dms)
+{
+	double sign = dms[0] < 0.0 ? -1.0 : 1.0;
+	return sign * (fabs(dms[0]) + dms[1] / 60.0 + dms[2] / 3600.0);
+}
+
+/* new matrix ------------------------------------------------------------------
+* allocate memory of matrix
+* args   : int    n,m       I   number of rows and columns of matrix
+* return : matrix pointer (if n<=0 or m<=0, return NULL)
+*-----------------------------------------------------------------------------*/
+double *mat_mat(int n, int m)
+{
+	double *p;
+
+	if (n <= 0 || m <= 0) return NULL;
+	if (!(p = (double *)malloc(sizeof(double)*n*m))) {
+		trace(1,"matrix memory allocation error: n=%d,m=%d\n", n, m);
+	}
+	return p;
+}
+
+/* new integer matrix ----------------------------------------------------------
+* allocate memory of integer matrix
+* args   : int    n,m       I   number of rows and columns of matrix
+* return : matrix pointer (if n<=0 or m<=0, return NULL)
+*-----------------------------------------------------------------------------*/
+int *imat_mat(int n, int m)
+{
+	int *p;
+
+	if (n <= 0 || m <= 0) return NULL;
+	if (!(p = (int *)malloc(sizeof(int)*n*m))) {
+		trace(1, "integer matrix memory allocation error: n=%d,m=%d\n", n, m);
+	}
+	return p;
+}
+
+/* zero matrix -----------------------------------------------------------------
+* generate new zero matrix
+* args   : int    n,m       I   number of rows and columns of matrix
+* return : matrix pointer (if n<=0 or m<=0, return NULL)
+*-----------------------------------------------------------------------------*/
+double *zeros_mat(int n, int m)
+{
+	double *p;
+
+#if NOCALLOC
+	if ((p = mat(n, m))) for (n = n*m - 1; n >= 0; n--) p[n] = 0.0;
+#else
+	if (n <= 0 || m <= 0) return NULL;
+	if (!(p = (double *)calloc(sizeof(double), n*m))) {
+		trace(1,"matrix memory allocation error: n=%d,m=%d\n", n, m);
+	}
+#endif
+	return p;
+}
+
+/* identity matrix -------------------------------------------------------------
+* generate new identity matrix
+* args   : int    n         I   number of rows and columns of matrix
+* return : matrix pointer (if n<=0, return NULL)
+*-----------------------------------------------------------------------------*/
+double *eye_mat(int n)
+{
+	double *p;
+	int i;
+
+	if ((p = zeros_mat(n, n))) for (i = 0; i<n; i++) p[i + i*n] = 1.0;
+	return p;
+}
+
+/* copy matrix -----------------------------------------------------------------
+* copy matrix
+* args   : double *A        O   destination matrix A (n x m)
+*          double *B        I   source matrix B (n x m)
+*          int    n,m       I   number of rows and columns of matrix
+* return : none
+*-----------------------------------------------------------------------------*/
+void matcpy(double *A, const double *B, int n, int m)
+{
+	memcpy(A, B, sizeof(double)*n*m);
+}
+
+/* multiply matrix (wrapper of blas dgemm) -------------------------------------
+* multiply matrix by matrix (C=alpha*A*B+beta*C)
+* args   : char   *tr       I  transpose flags ("N":normal,"T":transpose)
+*          int    n,k,m     I  size of (transposed) matrix A,B
+*          double alpha     I  alpha
+*          double *A,*B     I  (transposed) matrix A (n x m), B (m x k)
+*          double beta      I  beta
+*          double *C        IO matrix C (n x k)
+* return : none
+*-----------------------------------------------------------------------------*/
+void matmul(const char *tr, int n, int k, int m, double alpha,
+	const double *A, const double *B, double beta, double *C)
+{
+	double d;
+	int i, j, x, f = tr[0] == 'N' ? (tr[1] == 'N' ? 1 : 2) : (tr[1] == 'N' ? 3 : 4);
+
+	for (i = 0; i<n; i++) for (j = 0; j<k; j++) {
+		d = 0.0;
+		switch (f) {
+		case 1: for (x = 0; x<m; x++) d += A[i + x*n] * B[x + j*m]; break;
+		case 2: for (x = 0; x<m; x++) d += A[i + x*n] * B[j + x*k]; break;
+		case 3: for (x = 0; x<m; x++) d += A[x + i*m] * B[x + j*m]; break;
+		case 4: for (x = 0; x<m; x++) d += A[x + i*m] * B[j + x*k]; break;
+		}
+		if (beta == 0.0) C[i + j*n] = alpha*d; else C[i + j*n] = alpha*d + beta*C[i + j*n];
+	}
+}
+
+/* LU decomposition ----------------------------------------------------------*/
+static int ludcmp(double *A, int n, int *indx, double *d)
+{
+	double big, s, tmp, *vv = mat_mat(n, 1);
+	int i, imax = 0, j, k;
+
+	*d = 1.0;
+	for (i = 0; i<n; i++) {
+		big = 0.0; for (j = 0; j<n; j++) if ((tmp = fabs(A[i + j*n]))>big) big = tmp;
+		if (big>0.0) vv[i] = 1.0 / big; else { free(vv); return -1; }
+	}
+	for (j = 0; j<n; j++) {
+		for (i = 0; i<j; i++) {
+			s = A[i + j*n]; for (k = 0; k<i; k++) s -= A[i + k*n] * A[k + j*n]; A[i + j*n] = s;
+		}
+		big = 0.0;
+		for (i = j; i<n; i++) {
+			s = A[i + j*n]; for (k = 0; k<j; k++) s -= A[i + k*n] * A[k + j*n]; A[i + j*n] = s;
+			if ((tmp = vv[i] * fabs(s)) >= big) { big = tmp; imax = i; }
+		}
+		if (j != imax) {
+			for (k = 0; k<n; k++) {
+				tmp = A[imax + k*n]; A[imax + k*n] = A[j + k*n]; A[j + k*n] = tmp;
+			}
+			*d = -(*d); vv[imax] = vv[j];
+		}
+		indx[j] = imax;
+		if (A[j + j*n] == 0.0) { free(vv); return -1; }
+		if (j != n - 1) {
+			tmp = 1.0 / A[j + j*n]; for (i = j + 1; i<n; i++) A[i + j*n] *= tmp;
+		}
+	}
+	free(vv);
+	return 0;
+}
+/* LU back-substitution ------------------------------------------------------*/
+static void lubksb(const double *A, int n, const int *indx, double *b)
+{
+	double s;
+	int i, ii = -1, ip, j;
+
+	for (i = 0; i<n; i++) {
+		ip = indx[i]; s = b[ip]; b[ip] = b[i];
+		if (ii >= 0) for (j = ii; j<i; j++) s -= A[i + j*n] * b[j]; else if (s) ii = i;
+		b[i] = s;
+	}
+	for (i = n - 1; i >= 0; i--) {
+		s = b[i]; for (j = i + 1; j<n; j++) s -= A[i + j*n] * b[j]; b[i] = s / A[i + i*n];
+	}
+}
+
+/* inverse of matrix -----------------------------------------------------------
+* inverse of matrix (A=A^-1)
+* args   : double *A        IO  matrix (n x n)
+*          int    n         I   size of matrix A
+* return : status (0:ok,0>:error)
+*-----------------------------------------------------------------------------*/
+int matinv(double *A, int n)
+{
+	double d, *B;
+	int i, j, *indx;
+
+	indx = imat_mat(n, 1); B = mat_mat(n, n); matcpy(B, A, n, n);
+	if (ludcmp(B, n, indx, &d)) { free(indx); free(B); return -1; }
+	for (j = 0; j<n; j++) {
+		for (i = 0; i<n; i++) A[i + j*n] = 0.0; A[j + j*n] = 1.0;
+		lubksb(B, n, indx, A + j*n);
+	}
+	free(indx); free(B);
+	return 0;
+}
+
+/* solve linear equation -----------------------------------------------------*/
+int solve(const char *tr, const double *A, const double *Y, int n,
+	int m, double *X)
+{
+	double *B = mat_mat(n, n);
+	int info;
+
+	matcpy(B, A, n, n);
+	if (!(info = matinv(B, n))) matmul(tr[0] == 'N' ? "NN" : "TN", n, m, n, 1.0, B, Y, 0.0, X);
+	free(B);
+	return info;
+}
+/* least square estimation -----------------------------------------------------
+* least square estimation by solving normal equation (x=(A*A')^-1*A*y)
+* args   : double *A        I   transpose of (weighted) design matrix (n x m)
+*          double *y        I   (weighted) measurements (m x 1)
+*          int    n,m       I   number of parameters and measurements (n<=m)
+*          double *x        O   estmated parameters (n x 1)
+*          double *Q        O   esimated parameters covariance matrix (n x n)
+* return : status (0:ok,0>:error)
+* notes  : for weighted least square, replace A and y by A*w and w*y (w=W^(1/2))
+*          matirix stored by column-major order (fortran convention)
+*-----------------------------------------------------------------------------*/
+int lsq(const double *A, const double *y, int n, int m, double *x,
+	double *Q)
+{
+	double *Ay;
+	int info;
+
+	if (m<n) return -1;
+	Ay = mat_mat(n, 1);
+	matmul("NN", n, 1, m, 1.0, A, y, 0.0, Ay); /* Ay=A*y */
+	matmul("NT", n, n, m, 1.0, A, A, 0.0, Q);  /* Q=A*A' */
+	if (!(info = matinv(Q, n))) matmul("NN", n, 1, n, 1.0, Q, Ay, 0.0, x); /* x=Q^-1*Ay */
+	free(Ay);
+	return info;
+}
+/* kalman filter ---------------------------------------------------------------
+* kalman filter state update as follows:
+*
+*   K=P*H*(H'*P*H+R)^-1, xp=x+K*v, Pp=(I-K*H')*P
+*
+* args   : double *x        I   states vector (n x 1)
+*          double *P        I   covariance matrix of states (n x n)
+*          double *H        I   transpose of design matrix (n x m)
+*          double *v        I   innovation (measurement - model) (m x 1)
+*          double *R        I   covariance matrix of measurement error (m x m)
+*          int    n,m       I   number of states and measurements
+*          double *xp       O   states vector after update (n x 1)
+*          double *Pp       O   covariance matrix of states after update (n x n)
+* return : status (0:ok,<0:error)
+* notes  : matirix stored by column-major order (fortran convention)
+*          if state x[i]==0.0, not updates state x[i]/P[i+i*n]
+*-----------------------------------------------------------------------------*/
+static int filter_(const double *x, const double *P, const double *H,
+	const double *v, const double *R, int n, int m,
+	double *xp, double *Pp)
+{
+	double *F = mat_mat(n, m), *Q = mat_mat(m, m), *K = mat_mat(n, m), *I = eye_mat(n);
+	int info;
+
+	matcpy(Q, R, m, m);
+	matcpy(xp, x, n, 1);
+	matmul("NN", n, m, n, 1.0, P, H, 0.0, F);       /* Q=H'*P*H+R */
+	matmul("TN", m, m, n, 1.0, H, F, 1.0, Q);
+	if (!(info = matinv(Q, m))) {
+		matmul("NN", n, m, m, 1.0, F, Q, 0.0, K);   /* K=P*H*Q^-1 */
+		matmul("NN", n, 1, m, 1.0, K, v, 1.0, xp);  /* xp=x+K*v */
+		matmul("NT", n, n, m, -1.0, K, H, 1.0, I);  /* Pp=(I-K*H')*P */
+		matmul("NN", n, n, n, 1.0, I, P, 0.0, Pp);
+	}
+	free(F); free(Q); free(K); free(I);
+	return info;
+}
+
+int filter(double *x, double *P, const double *H, const double *v,
+	const double *R, int n, int m)
+{
+	double *x_, *xp_, *P_, *Pp_, *H_;
+	int i, j, k, info, *ix;
+
+	ix = imat_mat(n, 1); for (i = k = 0; i<n; i++) if (x[i] != 0.0&&P[i + i*n]>0.0) ix[k++] = i;
+	x_ = mat_mat(k, 1); xp_ = mat_mat(k, 1); P_ = mat_mat(k, k);
+	Pp_ = mat_mat(k, k); H_ = mat_mat(k, m);
+	for (i = 0; i<k; i++) {
+		x_[i] = x[ix[i]];
+		for (j = 0; j<k; j++) P_[i + j*k] = P[ix[i] + ix[j] * n];
+		for (j = 0; j<m; j++) H_[i + j*k] = H[ix[i] + j*n];
+	}
+	info = filter_(x_, P_, H_, v, R, k, m, xp_, Pp_);
+	for (i = 0; i<k; i++) {
+		x[ix[i]] = xp_[i];
+		for (j = 0; j<k; j++) P[ix[i] + ix[j] * n] = Pp_[i + j*k];
+	}
+	free(ix); free(x_); free(xp_); free(P_); free(Pp_); free(H_);
+	return info;
+}
+
+/* transform ecef to geodetic postion ------------------------------------------
+* transform ecef position to geodetic position
+* args   : double *r        I   ecef position {x,y,z} (m)
+*          double *pos      O   geodetic position {lat,lon,h} (rad,m)
+* return : none
+* notes  : WGS84, ellipsoidal height
+*-----------------------------------------------------------------------------*/
+void ecef2pos(const double *r, double *pos)
+{
+	double e2_ = FE_WGS84*(2.0 - FE_WGS84), r2 = dot(r, r, 2), z, zk, v = RE_WGS84, sinp;
+
+	for (z = r[2], zk = 0.0; fabs(z - zk) >= 1E-4;) {
+		zk = z;
+		sinp = z / sqrt(r2 + z*z);
+		v = RE_WGS84 / sqrt(1.0 - e2_*sinp*sinp);
+		z = r[2] + v*e2_*sinp;
+	}
+	pos[0] = r2>1E-12 ? atan(z / sqrt(r2)) : (r[2]>0.0 ? PI / 2.0 : -PI / 2.0);
+	pos[1] = r2>1E-12 ? atan2(r[1], r[0]) : 0.0;
+	pos[2] = sqrt(r2 + z*z) - v;
+}
+
+/* transform geodetic to ecef position -----------------------------------------
+* transform geodetic position to ecef position
+* args   : double *pos      I   geodetic position {lat,lon,h} (rad,m)
+*          double *r        O   ecef position {x,y,z} (m)
+* return : none
+* notes  : WGS84, ellipsoidal height
+*-----------------------------------------------------------------------------*/
+void pos2ecef(const double *pos, double *r)
+{
+	double sinp = sin(pos[0]), cosp = cos(pos[0]), sinl = sin(pos[1]), cosl = cos(pos[1]);
+	double e2_ = FE_WGS84*(2.0 - FE_WGS84), v = RE_WGS84 / sqrt(1.0 - e2_*sinp*sinp);
+
+	r[0] = (v + pos[2])*cosp*cosl;
+	r[1] = (v + pos[2])*cosp*sinl;
+	r[2] = (v*(1.0 - e2_) + pos[2])*sinp;
+}
+/* ecef to local coordinate transfromation matrix ------------------------------
+* compute ecef to local coordinate transfromation matrix
+* args   : double *pos      I   geodetic position {lat,lon} (rad)
+*          double *E        O   ecef to local coord transformation matrix (3x3)
+* return : none
+* notes  : matirix stored by column-major order (fortran convention)
+*-----------------------------------------------------------------------------*/
+void xyz2enu(const double *pos, double *E)
+{
+	double sinp = sin(pos[0]), cosp = cos(pos[0]), sinl = sin(pos[1]), cosl = cos(pos[1]);
+
+	E[0] = -sinl;      E[3] = cosl;       E[6] = 0.0;
+	E[1] = -sinp*cosl; E[4] = -sinp*sinl; E[7] = cosp;
+	E[2] = cosp*cosl;  E[5] = cosp*sinl;  E[8] = sinp;
+}
+/* transform ecef vector to local tangental coordinate -------------------------
+* transform ecef vector to local tangental coordinate
+* args   : double *pos      I   geodetic position {lat,lon} (rad)
+*          double *r        I   vector in ecef coordinate {x,y,z}
+*          double *e        O   vector in local tangental coordinate {e,n,u}
+* return : none
+*-----------------------------------------------------------------------------*/
+void ecef2enu(const double *pos, const double *r, double *e_)
+{
+	double E[9];
+
+	xyz2enu(pos, E);
+	matmul("NN", 3, 1, 3, 1.0, E, r, 0.0, e_);
+}
+/* transform local vector to ecef coordinate -----------------------------------
+* transform local tangental coordinate vector to ecef
+* args   : double *pos      I   geodetic position {lat,lon} (rad)
+*          double *e_       I   vector in local tangental coordinate {e_,n,u}
+*          double *r        O   vector in ecef coordinate {x,y,z}
+* return : none
+*-----------------------------------------------------------------------------*/
+void enu2ecef(const double *pos, const double *e_, double *r)
+{
+	double E[9];
+
+	xyz2enu(pos, E);
+	matmul("TN", 3, 1, 3, 1.0, E, e_, 0.0, r);
+}
+/* transform covariance to local tangental coordinate --------------------------
+* transform ecef covariance to local tangental coordinate
+* args   : double *pos      I   geodetic position {lat,lon} (rad)
+*          double *P        I   covariance in ecef coordinate
+*          double *Q        O   covariance in local tangental coordinate
+* return : none
+*-----------------------------------------------------------------------------*/
+void covenu(const double *pos, const double *P, double *Q)
+{
+	double E[9], EP[9];
+
+	xyz2enu(pos, E);
+	matmul("NN", 3, 3, 3, 1.0, E, P, 0.0, EP);
+	matmul("NT", 3, 3, 3, 1.0, EP, E, 0.0, Q);
+}
+/* transform local enu coordinate covariance to xyz-ecef -----------------------
+* transform local enu covariance to xyz-ecef coordinate
+* args   : double *pos      I   geodetic position {lat,lon} (rad)
+*          double *Q        I   covariance in local enu coordinate
+*          double *P        O   covariance in xyz-ecef coordinate
+* return : none
+*-----------------------------------------------------------------------------*/
+void covecef(const double *pos, const double *Q, double *P)
+{
+	double E[9], EQ[9];
+
+	xyz2enu(pos, E);
+	matmul("TN", 3, 3, 3, 1.0, E, Q, 0.0, EQ);
+	matmul("NN", 3, 3, 3, 1.0, EQ, E, 0.0, P);
+}
+
+/* satellite carrier wave length -----------------------------------------------
+* get satellite carrier wave lengths
+* args   : int    sat       I   satellite number
+*          int    frq       I   frequency index (0:L1,1:L2,2:L5/3,...)
+*          nav_t  *nav      I   navigation messages
+* return : carrier wave length (m) (0.0: error)
+*-----------------------------------------------------------------------------*/
+double satwavelen(int sat, int frq, const nav_t *nav)
+{
+	const double freq_glo[] = { FREQ1_GLO,FREQ2_GLO,FREQ3_GLO };
+	const double dfrq_glo[] = { DFRQ1_GLO,DFRQ2_GLO,0.0 };
+	int i, sys = satsys(sat, NULL);
+
+	if (sys == SYS_GLO) {
+		if (0 <= frq&&frq <= 2) {
+			for (i = 0; i<nav->ng; i++) {
+				if (nav->geph[i].sat != sat) continue;
+				return CLIGHT / (freq_glo[frq] + dfrq_glo[frq] * nav->geph[i].frq);
+			}
+		}
+	}
+	else if (sys == SYS_CMP) {
+		if (frq == 0) return CLIGHT / FREQ1_CMP; /* B1 */
+		else if (frq == 1) return CLIGHT / FREQ2_CMP; /* B3 */
+		else if (frq == 2) return CLIGHT / FREQ3_CMP; /* B2 */
+	}
+	else {
+		if (frq == 0) return CLIGHT / FREQ1; /* L1/E1 */
+		else if (frq == 1) return CLIGHT / FREQ2; /* L2 */
+		else if (frq == 2) return CLIGHT / FREQ5; /* L5/E5a */
+		else if (frq == 3) return CLIGHT / FREQ6; /* L6/LEX */
+		else if (frq == 4) return CLIGHT / FREQ7; /* E5b */
+		else if (frq == 5) return CLIGHT / FREQ8; /* E5a+b */
+	}
+	return 0.0;
+}
+/* unique ephemerides ----------------------------------------------------------
+* unique ephemerides in navigation data and update carrier wave length
+* args   : nav_t *nav    IO     navigation data
+* return : number of epochs
+*-----------------------------------------------------------------------------*/
+void uniqnav(nav_t* nav)
+{
+	int i, j;
+
+	trace(3, "uniqnav: neph=%d ngeph=%d \n", nav->n, nav->ng);
+
+	/* unique ephemeris */
+	//uniqeph(nav);
+	//uniqgeph(nav);
+	//uniqseph(nav);
+
+	/* update carrier wave length */
+	for (i = 0;i < MAXSAT;i++) for (j = 0;j < NFREQ;j++) {
+		nav->lam[i][j] = satwavelen(i + 1, j, nav);
+	}
+}
+/* geometric distance ----------------------------------------------------------
+* compute geometric distance and receiver-to-satellite unit vector
+* args   : double *rs       I   satellilte position (ecef at transmission) (m)
+*          double *rr       I   receiver position (ecef at reception) (m)
+*          double *e        O   line-of-sight vector (ecef)
+* return : geometric distance (m) (0>:error/no satellite position)
+* notes  : distance includes sagnac effect correction
+*-----------------------------------------------------------------------------*/
+double geodist(const double *rs, const double *rr, double *e_)
+{
+	double r;
+	int i;
+
+	if (norm(rs, 3)<RE_WGS84) return -1.0;
+	for (i = 0; i<3; i++) e_[i] = rs[i] - rr[i];
+	r = norm(e_, 3);
+	for (i = 0; i<3; i++) e_[i] /= r;
+	return r + wie0*(rs[0] * rr[1] - rs[1] * rr[0]) / CLIGHT;
+}
+
+/* compute dops ----------------------------------------------------------------
+* compute DOP (dilution of precision)
+* args   : int    ns        I   number of satellites
+*          double *azel     I   satellite azimuth/elevation angle (rad)
+*          double elmin     I   elevation cutoff angle (rad)
+*          double *dop      O   DOPs {GDOP,PDOP,HDOP,VDOP}
+* return : none
+* notes  : dop[0]-[3] return 0 in case of dop computation error
+*-----------------------------------------------------------------------------*/
+#define SQRT(x)     ((x)<0.0?0.0:sqrt(x))
+
+void dops(int ns, const double *azel, double elmin, double *dop)
+{
+	double H[4 * MAXSAT], Q[16], cosel, sinel;
+	int i, n;
+
+	for (i = 0; i<4; i++) dop[i] = 0.0;
+	for (i = n = 0; i<ns&&i<MAXSAT; i++) {
+		if (azel[1 + i * 2]<elmin || azel[1 + i * 2] <= 0.0) continue;
+		cosel = cos(azel[1 + i * 2]);
+		sinel = sin(azel[1 + i * 2]);
+		H[4 * n] = cosel*sin(azel[i * 2]);
+		H[1 + 4 * n] = cosel*cos(azel[i * 2]);
+		H[2 + 4 * n] = sinel;
+		H[3 + 4 * n++] = 1.0;
+	}
+	if (n<4) return;
+
+	matmul("NT", 4, 4, n, 1.0, H, H, 0.0, Q);
+	if (!matinv(Q, 4)) {
+		dop[0] = SQRT(Q[0] + Q[5] + Q[10] + Q[15]); /* GDOP */
+		dop[1] = SQRT(Q[0] + Q[5] + Q[10]);       /* PDOP */
+		dop[2] = SQRT(Q[0] + Q[5]);             /* HDOP */
+		dop[3] = SQRT(Q[10]);                 /* VDOP */
+	}
+}
+/* ionosphere model ------------------------------------------------------------
+* compute ionospheric delay by broadcast ionosphere model (klobuchar model)
+* args   : gtime_t t        I   time (gpst)
+*          double *ion      I   iono model parameters {a0,a1,a2,a3,b0,b1,b2,b3}
+*          double *pos      I   receiver position {lat,lon,h} (rad,m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+* return : ionospheric delay (L1) (m)
+*-----------------------------------------------------------------------------*/
+double ionmodel(gtime_t t, const float *ion, const double *pos,
+	const float *azel)
+{
+	const float ion_default[] = { /* 2004/1/1 */
+		0.1118E-07,-0.7451E-08,-0.5961E-07, 0.1192E-06,
+		0.1167E+06,-0.2294E+06,-0.1311E+06, 0.1049E+07
+	};
+	double tt, f, psi, phi, lam, amp, per, x;
+	int week;
+
+	if (pos[2]<-1E3 || azel[1] <= 0) return 0.0;
+	if (norm((double*)ion, 8) <= 0.0) ion = ion_default;
+
+	/* earth centered angle (semi-circle) */
+	psi = 0.0137 / (azel[1] / PI + 0.11) - 0.022;
+
+	/* subionospheric latitude/longitude (semi-circle) */
+	phi = pos[0] / PI + psi*cos(azel[0]);
+	if (phi> 0.416) phi = 0.416;
+	else if (phi<-0.416) phi = -0.416;
+	lam = pos[1] / PI + psi*sin(azel[0]) / cos(phi*PI);
+
+	/* geomagnetic latitude (semi-circle) */
+	phi += 0.064*cos((lam - 1.617)*PI);
+
+	/* local time (s) */
+	tt = 43200.0*lam + time2gpst(t, &week);
+	tt -= floor(tt / 86400.0)*86400.0; /* 0<=tt<86400 */
+
+									   /* slant factor */
+	f = 1.0 + 16.0*pow(0.53 - azel[1] / PI, 3.0);
+
+	/* ionospheric delay */
+	amp = ion[0] + phi*(ion[1] + phi*(ion[2] + phi*ion[3]));
+	per = ion[4] + phi*(ion[5] + phi*(ion[6] + phi*ion[7]));
+	amp = amp<    0.0 ? 0.0 : amp;
+	per = per<72000.0 ? 72000.0 : per;
+	x = 2.0*PI*(tt - 50400.0) / per;
+
+	return CLIGHT*f*(fabs(x)<1.57 ? 5E-9 + amp*(1.0 + x*x*(-0.5 + x*x / 24.0)) : 5E-9);
+}
+/* ionosphere mapping function -------------------------------------------------
+* compute ionospheric delay mapping function by single layer model
+* args   : double *pos      I   receiver position {lat,lon,h} (rad,m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+* return : ionospheric mapping function
+*-----------------------------------------------------------------------------*/
+double ionmapf(const vect3 pos, const double *azel)
+{
+	if (pos.k >= HION) return 1.0;
+	return 1.0 / cos(asin((RE_WGS84 + pos.k) / (RE_WGS84 + HION)*sin(PI / 2.0 - azel[1])));
+}
+/* ionospheric pierce point position -------------------------------------------
+* compute ionospheric pierce point (ipp) position and slant factor
+* args   : double *pos      I   receiver position {lat,lon,h} (rad,m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+*          double re        I   earth radius (km)
+*          double hion      I   altitude of ionosphere (km)
+*          double *posp     O   pierce point position {lat,lon,h} (rad,m)
+* return : slant factor
+* notes  : see ref [2], only valid on the earth surface
+*          fixing bug on ref [2] A.4.4.10.1 A-22,23
+*-----------------------------------------------------------------------------*/
+double ionppp(const double *pos, const double *azel, double re,
+	double hion, double *posp)
+{
+	double cosaz, rp, ap, sinap, tanap;
+
+	rp = re / (re + hion)*cos(azel[1]);
+	ap = PI / 2.0 - azel[1] - asin(rp);
+	sinap = sin(ap);
+	tanap = tan(ap);
+	cosaz = cos(azel[0]);
+	posp[0] = asin(sin(pos[0])*cos(ap) + cos(pos[0])*sinap*cosaz);
+
+	if ((pos[0]> 70.0*DEG&& tanap*cosaz>tan(PI / 2.0 - pos[0])) ||
+		(pos[0]<-70.0*DEG&&-tanap*cosaz>tan(PI / 2.0 + pos[0]))) {
+		posp[1] = pos[1] + PI - asin(sinap*sin(azel[0]) / cos(posp[0]));
+	}
+	else {
+		posp[1] = pos[1] + asin(sinap*sin(azel[0]) / cos(posp[0]));
+	}
+	return 1.0 / sqrt(1.0 - rp*rp);
+}
+/* troposphere model -----------------------------------------------------------
+* compute tropospheric delay by standard atmosphere and saastamoinen model
+* args   : gtime_t time     I   time
+*          double *pos      I   receiver position {lat,lon,h} (rad,m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+*          double humi      I   relative humidity
+* return : tropospheric delay (m)
+*-----------------------------------------------------------------------------*/
+double tropmodel(gtime_t time, const vect3 pos, const float *azel,double humi)
+{
+	const double temp0 = 15.0; /* temparature at sea level */
+	double hgt, pres, temp, e_, z, trph, trpw;
+
+	if (pos.k<-100.0 || 1E4<pos.k || azel[1] <= 0) return 0.0;
+
+	/* standard atmosphere */
+	hgt = pos.k<0.0 ? 0.0 : pos.k;
+
+	pres = 1013.25*pow(1.0 - 2.2557E-5*hgt, 5.2568);
+	temp = temp0 - 6.5E-3*hgt + 273.16;
+	e_ = 6.108*humi*exp((17.15*temp - 4684.0) / (temp - 38.45));
+
+	/* saastamoninen model */
+	z = PI / 2.0 - azel[1];
+	trph = 0.0022768*pres / (1.0 - 0.00266*cos(2.0*pos.i) - 0.00028*hgt / 1E3) / cos(z);
+	trpw = 0.002277*(1255.0 / temp + 0.05)*e_ / cos(z);
+	return trph + trpw;
+}
+static double interpc(const double coef[], double lat)
+{
+	int i = (int)(lat / 15.0);
+	if (i<1) return coef[0]; else if (i>4) return coef[4];
+	return coef[i - 1] * (1.0 - lat / 15.0 + i) + coef[i] * (lat / 15.0 - i);
+}
+static double mapf(double el, double a, double b, double c)
+{
+	double sinel = sin(el);
+	return (1.0 + a / (1.0 + b / (1.0 + c))) / (sinel + (a / (sinel + b / (sinel + c))));
+}
+static double nmf(gtime_t time, const vect3 pos, const double azel[], double *mapfw)
+{
+	/* ref [5] table 3 */
+	/* hydro-ave-a,b,c, hydro-amp-a,b,c, wet-a,b,c at latitude 15,30,45,60,75 */
+	const double coef[][5] = {
+		{ 1.2769934E-3, 1.2683230E-3, 1.2465397E-3, 1.2196049E-3, 1.2045996E-3 },
+		{ 2.9153695E-3, 2.9152299E-3, 2.9288445E-3, 2.9022565E-3, 2.9024912E-3 },
+		{ 62.610505E-3, 62.837393E-3, 63.721774E-3, 63.824265E-3, 64.258455E-3 },
+
+		{ 0.0000000E-0, 1.2709626E-5, 2.6523662E-5, 3.4000452E-5, 4.1202191E-5 },
+		{ 0.0000000E-0, 2.1414979E-5, 3.0160779E-5, 7.2562722E-5, 11.723375E-5 },
+		{ 0.0000000E-0, 9.0128400E-5, 4.3497037E-5, 84.795348E-5, 170.37206E-5 },
+
+		{ 5.8021897E-4, 5.6794847E-4, 5.8118019E-4, 5.9727542E-4, 6.1641693E-4 },
+		{ 1.4275268E-3, 1.5138625E-3, 1.4572752E-3, 1.5007428E-3, 1.7599082E-3 },
+		{ 4.3472961E-2, 4.6729510E-2, 4.3908931E-2, 4.4626982E-2, 5.4736038E-2 }
+	};
+	const double aht[] = { 2.53E-5, 5.49E-3, 1.14E-3 }; /* height correction */
+
+	double y, cosy, ah[3], aw[3], dm, el = azel[1], lat = pos.i /DEG, hgt = pos.k;
+	int i;
+
+	if (el <= 0.0) {
+		if (mapfw) *mapfw = 0.0;
+		return 0.0;
+	}
+	/* year from doy 28, added half a year for southern latitudes */
+	y = (time2doy(time) - 28.0) / 365.25 + (lat<0.0 ? 0.5 : 0.0);
+
+	cosy = cos(2.0*PI*y);
+	lat = fabs(lat);
+
+	for (i = 0; i<3; i++) {
+		ah[i] = interpc(coef[i], lat) - interpc(coef[i + 3], lat)*cosy;
+		aw[i] = interpc(coef[i + 6], lat);
+	}
+	/* ellipsoidal height is used instead of height above sea level */
+	dm = (1.0 / sin(el) - mapf(el, aht[0], aht[1], aht[2]))*hgt / 1E3;
+
+	if (mapfw) *mapfw = mapf(el, aw[0], aw[1], aw[2]);
+
+	return mapf(el, ah[0], ah[1], ah[2]) + dm;
+}
+
+/* troposphere mapping function ------------------------------------------------
+* compute tropospheric mapping function by NMF
+* args   : gtime_t t        I   time
+*          double *pos      I   receiver position {lat,lon,h} (rad,m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+*          double *mapfw    IO  wet mapping function (NULL: not output)
+* return : dry mapping function
+* note   : see ref [5] (NMF) and [9] (GMF)
+*          original JGR paper of [5] has bugs in eq.(4) and (5). the corrected
+*          paper is obtained from:
+*          ftp://web.haystack.edu/pub/aen/nmf/NMF_JGR.pdf
+*-----------------------------------------------------------------------------*/
+double tropmapf(gtime_t time, const vect3 pos, const double azel[],	double *mapfw)
+{
+#ifdef IERS_MODEL
+	const double ep[] = { 2000,1,1,12,0,0 };
+	double mjd, lat, lon, hgt, zd, gmfh, gmfw;
+#endif
+	trace(4, "tropmapf: pos=%10.6f %11.6f %6.1f azel=%5.1f %4.1f\n",
+		pos.i /DEG, pos.j /DEG, pos.k, azel[0] /DEG, azel[1] /DEG);
+
+	if (pos.k<-1000.0 || pos.k>20000.0) {
+		if (mapfw) *mapfw = 0.0;
+		return 0.0;
+	}
+#ifdef IERS_MODEL
+	mjd = 51544.5 + (timediff(time, epoch2time(ep))) / 86400.0;
+	lat = pos[0];
+	lon = pos[1];
+	hgt = pos[2] - geoidh(pos); /* height in m (mean sea level) */
+	zd = PI / 2.0 - azel[1];
+
+	/* call GMF */
+	gmf_(&mjd, &lat, &lon, &hgt, &zd, &gmfh, &gmfw);
+
+	if (mapfw) *mapfw = gmfw;
+	return gmfh;
+#else
+	return nmf(time, pos, azel, mapfw); /* NMF */
+#endif
+}
+/* interpolate antenna phase center variation --------------------------------*/
+static double interpvar(double ang, const double *var)
+{
+	double a = ang / 5.0; /* ang=0-90 */
+	int i = (int)a;
+	if (i<0) return var[0]; else if (i >= 18) return var[18];
+	return var[i] * (1.0 - a + i) + var[i + 1] * (a - i);
+}
+
+
+/* satellite azimuth/elevation angle -------------------------------------------
+* compute satellite azimuth/elevation angle
+* args   : double *pos      I   geodetic position {lat,lon,h} (rad,m)
+*          double *e        I   receiver-to-satellilte unit vevtor (ecef)
+*          double *azel     IO  azimuth/elevation {az,el} (rad) (NULL: no output)
+*                               (0.0<=azel[0]<2*pi,-pi/2<=azel[1]<=pi/2)
+* return : elevation angle (rad)
+*-----------------------------------------------------------------------------*/
+double satazel(const double *pos, const double *e_, float *azel)
+{
+	double az = 0.0, el = PI / 2.0, enu[3];
+
+	if (pos[2]>-RE_WGS84) {
+		ecef2enu(pos, e_, enu);
+		az = dot(enu, enu, 2)<1E-12 ? 0.0 : atan2(enu[0], enu[1]);
+		if (az<0.0) az += 2 * PI;
+		el = asin(enu[2]);
+	}
+	if (azel) { azel[0] = az; azel[1] = el; }
+	return el;
+}
+
+
 /**
  * @brief Constructor for the KFAPP class.
  *

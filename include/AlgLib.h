@@ -3524,6 +3524,701 @@ void fusion(vect3& x1, vect3& p1, const vect3 x2, const vect3 p2);
 void fusion(vect3& x1, vect3& p1, const vect3 x2, const vect3 p2, vect3& xf, vect3& pf);
 
 
+slot number (NULL: no output)
+* return : satellite system (SYS_GPS,SYS_GLO,...)
+*-----------------------------------------------------------------------------*/
+int  satsys(int sat, int* prn);
+/* satellite id to satellite number --------------------------------------------
+* convert satellite id to satellite number
+* args   : char   *id       I   satellite id (nn,Gnn,Rnn,Enn,Jnn,Cnn or Snn)
+* return : satellite number (0: error)
+* notes  : 120-138 and 193-195 are also recognized as sbas and qzss
+*-----------------------------------------------------------------------------*/
+int  satid2no(const char* id);
+/* satellite number to satellite id --------------------------------------------
+* convert satellite number to satellite id
+* args   : int    sat       I   satellite number
+*          char   *id       O   satellite id (Gnn,Rnn,Enn,Jnn,Cnn or nnn)
+* return : none
+*-----------------------------------------------------------------------------*/
+void satno2id(int sat, char* id);
+/* obs type string to obs code -------------------------------------------------
+* convert obs code type string to obs code
+* args   : char   *str      I   obs code string ("1C","1P","1Y",...)
+* return : obs code (CODE_???)
+* notes  : obs codes are based on RINEX 3.04
+*-----------------------------------------------------------------------------*/
+uint8_t obs2code(const char* obs);
+/* obs type string to obs code -------------------------------------------------
+* convert obs code type string to obs code
+* args   : char   *str   I      obs code string ("1C","1P","1Y",...)
+*          int    *freq  IO     frequency (1:L1,2:L2,3:L5,4:L6,5:L7,6:L8,0:err)
+*                               (NULL: no output)
+* return : obs code (CODE_???)
+* notes  : obs codes are based on reference [6] and qzss extension
+*-----------------------------------------------------------------------------*/
+unsigned char obs2code(const char* obs, int* freq);
+/* system and obs code to frequency index --------------------------------------
+* convert system and obs code to frequency index
+* args   : int    sys       I   satellite system (SYS_???)
+*          uint8_t code     I   obs code (CODE_???)
+* return : frequency index (-1: error)
+*                       0     1     2     3     4
+*           --------------------------------------
+*            GPS       L1    L2    L5     -     -
+*            GLONASS   G1    G2    G3     -     -  (G1=G1,G1a,G2=G2,G2a)
+*            Galileo   E1    E5b   E5a   E6   E5ab
+*            QZSS      L1    L2    L5    L6     -
+*            SBAS      L1     -    L5     -     -
+*            BDS       B1    B2    B2a   B3   B2ab (B1=B1I,B1C,B2=B2I,B2b)
+*            NavIC     L5     S     -     -     -
+*-----------------------------------------------------------------------------*/
+int  code2idx(int sys, uint8_t code);
+/* obs code to obs code string -------------------------------------------------
+* convert obs code to obs code string
+* args   : uint8_t code     I   obs code (CODE_???)
+* return : obs code string ("1C","1P","1P",...)
+* notes  : obs codes are based on RINEX 3.04
+*-----------------------------------------------------------------------------*/
+char* code2obs(uint8_t code);
+/* test excluded satellite -----------------------------------------------------
+* test excluded satellite
+* args   : int    sat       I   satellite number
+*          int    svh       I   sv health flag
+*          prcopt_t *opt    I   processing options (NULL: not used)
+* return : status (1:excluded,0:not excluded)
+*-----------------------------------------------------------------------------*/
+char* code2obs(unsigned char code, int* freq);
+/* set code priority -----------------------------------------------------------
+* set code priority for multiple codes in a frequency
+* args   : int    sys     I     system (or of SYS_???)
+*          int    freq    I     frequency (1:L1,2:L2,3:L5,4:L6,5:L7,6:L8)
+*          char   *pri    I     priority of codes (series of code characters)
+*                               (higher priority precedes lower)
+* return : none
+*-----------------------------------------------------------------------------*/
+void setcodepri(int sys, int freq, const char* pri);
+/* get code priority -----------------------------------------------------------
+* get code priority for multiple codes in a frequency
+* args   : int    sys     I     system (SYS_???)
+*          unsigned char code I obs code (CODE_???)
+*          char   *opt    I     code options (NULL:no option)
+* return : priority (15:highest-1:lowest,0:error)
+*-----------------------------------------------------------------------------*/
+int  getcodepri(int sys, unsigned char code, const char* opt);
+/* test excluded satellite -----------------------------------------------------
+* test excluded satellite
+* args   : int    sat       I   satellite number
+*          int    svh       I   sv health flag
+*          prcopt_t *opt    I   processing options (NULL: not used)
+* return : status (1:excluded,0:not excluded)
+*-----------------------------------------------------------------------------*/
+int satexclude(int sat, int svh, int* exsats, int navsys);
+/* test SNR mask ---------------------------------------------------------------
+* test SNR mask
+* args   : int    base      I   rover or base-station (0:rover,1:base station)
+*          int    freq      I   frequency (0:L1,1:L2,2:L3,...)
+*          double el        I   elevation angle (rad)
+*          double snr       I   C/N0 (dBHz)
+*          snrmask_t *mask  I   SNR mask
+* return : status (1:masked,0:unmasked)
+*-----------------------------------------------------------------------------*/
+int  testsnr(int base, int freq, double el, double snr, const snrmask_t* mask);
+/* string to number ------------------------------------------------------------
+* convert substring in string to number
+* args   : char   *s        I   string ("... nnn.nnn ...")
+*          int    i,n       I   substring position and width
+* return : converted number (0.0:error)
+*-----------------------------------------------------------------------------*/
+double  str2num(const char* s, int i, int n);
+/* string to time --------------------------------------------------------------
+* convert substring in string to gtime_t struct
+* args   : char   *s        I   string ("... yyyy mm dd hh mm ss ...")
+*          int    i,n       I   substring position and width
+*          gtime_t *t       O   gtime_t struct
+* return : status (0:ok,0>:error)
+*-----------------------------------------------------------------------------*/
+int     str2time(const char* s, int i, int n, gtime_t* t);
+/* time to string --------------------------------------------------------------
+* convert gtime_t struct to string
+* args   : gtime_t t        I   gtime_t struct
+*          char   *s        O   string ("yyyy/mm/dd hh:mm:ss.ssss")
+*          int    n         I   number of decimals
+* return : none
+*-----------------------------------------------------------------------------*/
+void    time2str(gtime_t t, char* str, int n);
+/* convert calendar day/time to time -------------------------------------------
+* convert calendar day/time to gtime_t struct
+* args   : double *ep_       I   day/time {year,month,day,hour,min,sec}
+* return : gtime_t struct
+* notes  : proper in 1970-2037 or 1970-2099 (64bit time_t)
+*-----------------------------------------------------------------------------*/
+gtime_t epoch2time(const double* ep);
+/* time to calendar day/time ---------------------------------------------------
+* convert gtime_t struct to calendar day/time
+* args   : gtime_t t        I   gtime_t struct
+*          double *ep_       O   day/time {year,month,day,hour,min,sec}
+* return : none
+* notes  : proper in 1970-2037 or 1970-2099 (64bit time_t)
+*-----------------------------------------------------------------------------*/
+void    time2epoch(gtime_t t, double* ep);
+/* gps time to time ------------------------------------------------------------
+* convert week and tow in gps time to gtime_t struct
+* args   : int    week      I   week number in gps time
+*          double sec       I   time of week in gps time (s)
+* return : gtime_t struct
+*-----------------------------------------------------------------------------*/
+gtime_t gpst2time(int week, double sec);
+/* time to gps time ------------------------------------------------------------
+* convert gtime_t struct to week and tow in gps time
+* args   : gtime_t t        I   gtime_t struct
+*          int    *week     IO  week number in gps time (NULL: no output)
+* return : time of week in gps time (s)
+*-----------------------------------------------------------------------------*/
+double  time2gpst(gtime_t t, int* week);
+/* galileo system time to time -------------------------------------------------
+* convert week and tow in galileo system time (gst) to gtime_t struct
+* args   : int    week      I   week number in gst
+*          double sec       I   time of week in gst (s)
+* return : gtime_t struct
+*-----------------------------------------------------------------------------*/
+gtime_t gst2time(int week, double sec);
+/* time to galileo system time -------------------------------------------------
+* convert gtime_t struct to week and tow in galileo system time (gst)
+* args   : gtime_t t        I   gtime_t struct
+*          int    *week     IO  week number in gst (NULL: no output)
+* return : time of week in gst (s)
+*-----------------------------------------------------------------------------*/
+double  time2gst(gtime_t t, int* week);
+/* beidou time (bdt) to time ---------------------------------------------------
+* convert week and tow in beidou time (bdt) to gtime_t struct
+* args   : int    week      I   week number in bdt
+*          double sec       I   time of week in bdt (s)
+* return : gtime_t struct
+*-----------------------------------------------------------------------------*/
+gtime_t bdt2time(int week, double sec);
+/* time to beidouo time (bdt) --------------------------------------------------
+* convert gtime_t struct to week and tow in beidou time (bdt)
+* args   : gtime_t t        I   gtime_t struct
+*          int    *week     IO  week number in bdt (NULL: no output)
+* return : time of week in bdt (s)
+*-----------------------------------------------------------------------------*/
+double  time2bdt(gtime_t t, int* week);
+/* get time string -------------------------------------------------------------
+* get time string
+* args   : gtime_t t        I   gtime_t struct
+*          int    n         I   number of decimals
+* return : time string
+* notes  : not reentrant, do not use multiple in a function
+*-----------------------------------------------------------------------------*/
+char* time_str(gtime_t t, int n);
+/* add time --------------------------------------------------------------------
+* add time to gtime_t struct
+* args   : gtime_t t        I   gtime_t struct
+*          double sec       I   time to add (s)
+* return : gtime_t struct (t+sec)
+*-----------------------------------------------------------------------------*/
+gtime_t timeadd(gtime_t t, double sec);
+/* time difference -------------------------------------------------------------
+* difference between gtime_t structs
+* args   : gtime_t t1,t2    I   gtime_t structs
+* return : time difference (t1-t2) (s)
+*-----------------------------------------------------------------------------*/
+double  timediff(gtime_t t1, gtime_t t2);
+/* gpstime to utc --------------------------------------------------------------
+* convert gpstime to utc considering leap seconds
+* args   : gtime_t t        I   time expressed in gpstime
+* return : time expressed in utc
+* notes  : ignore slight time offset under 100 ns
+*-----------------------------------------------------------------------------*/
+gtime_t gpst2utc(gtime_t t);
+/* utc to gpstime --------------------------------------------------------------
+* convert utc to gpstime considering leap seconds
+* args   : gtime_t t        I   time expressed in utc
+* return : time expressed in gpstime
+* notes  : ignore slight time offset under 100 ns
+*-----------------------------------------------------------------------------*/
+gtime_t utc2gpst(gtime_t t);
+/* gpstime to bdt --------------------------------------------------------------
+* convert gpstime to bdt (beidou navigation satellite system time)
+* args   : gtime_t t        I   time expressed in gpstime
+* return : time expressed in bdt
+* notes  : ref [8] 3.3, 2006/1/1 00:00 BDT = 2006/1/1 00:00 UTC
+*          no leap seconds in BDT
+*          ignore slight time offset under 100 ns
+*-----------------------------------------------------------------------------*/
+gtime_t gpst2bdt(gtime_t t);
+/* bdt to gpstime --------------------------------------------------------------
+* convert bdt (beidou navigation satellite system time) to gpstime
+* args   : gtime_t t        I   time expressed in bdt
+* return : time expressed in gpstime
+* notes  : see gpst2bdt()
+*-----------------------------------------------------------------------------*/
+gtime_t bdt2gpst(gtime_t t);
+/* time to day of year ---------------------------------------------------------
+* convert time to day of year
+* args   : gtime_t t        I   gtime_t struct
+* return : day of year (days)
+*-----------------------------------------------------------------------------*/
+double  time2doy(gtime_t t);
+/* utc to gmst -----------------------------------------------------------------
+* convert utc to gmst (Greenwich mean sidereal time)
+* args   : gtime_t t        I   time expressed in utc
+*          double ut1_utc   I   UT1-UTC (s)
+* return : gmst (rad)
+*-----------------------------------------------------------------------------*/
+double  utc2gmst(gtime_t t, double ut1_utc);
+/* read leap seconds table -----------------------------------------------------
+* read leap seconds table
+* args   : char    *file    I   leap seconds table file
+* return : status (1:ok,0:error)
+* notes  : (1) The records in the table file cosist of the following fields:
+*              year month day hour min sec UTC-GPST(s)
+*          (2) The date and time indicate the start UTC time for the UTC-GPST
+*          (3) The date and time should be descending order.
+*-----------------------------------------------------------------------------*/
+int read_leaps(const char* file);
+/* new matrix ------------------------------------------------------------------
+* allocate memory of matrix
+* args   : int    n,m       I   number of rows and columns of matrix
+* return : matrix pointer (if n<=0 or m<=0, return NULL)
+*-----------------------------------------------------------------------------*/
+double* mat_mat(int n, int m);
+/* new integer matrix ----------------------------------------------------------
+* allocate memory of integer matrix
+* args   : int    n,m       I   number of rows and columns of matrix
+* return : matrix pointer (if n<=0 or m<=0, return NULL)
+*-----------------------------------------------------------------------------*/
+int* imat_mat(int n, int m);
+/* zero matrix -----------------------------------------------------------------
+* generate new zero matrix
+* args   : int    n,m       I   number of rows and columns of matrix
+* return : matrix pointer (if n<=0 or m<=0, return NULL)
+*-----------------------------------------------------------------------------*/
+double* zeros_mat(int n, int m);
+/* identity matrix -------------------------------------------------------------
+* generate new identity matrix
+* args   : int    n         I   number of rows and columns of matrix
+* return : matrix pointer (if n<=0, return NULL)
+*-----------------------------------------------------------------------------*/
+double* eye_mat(int n);
+/* outer product of 3d vectors -------------------------------------------------
+* outer product of 3d vectors
+* args   : double *a,*b     I   vector a,b (3 x 1)
+*          double *c        O   outer product (a x b) (3 x 1)
+* return : none
+*-----------------------------------------------------------------------------*/
+void cross3(const double* a, const double* b, double* c);
+/* normalize 3d vector ---------------------------------------------------------
+* normalize 3d vector
+* args   : double *a        I   vector a (3 x 1)
+*          double *b        O   normlized vector (3 x 1) || b || = 1
+* return : status (1:ok,0:error)
+*-----------------------------------------------------------------------------*/
+int  normv3(const double* a, double* b);
+/* copy matrix -----------------------------------------------------------------
+* copy matrix
+* args   : double *A        O   destination matrix A (n x m)
+*          double *B        I   source matrix B (n x m)
+*          int    n,m       I   number of rows and columns of matrix
+* return : none
+*-----------------------------------------------------------------------------*/
+void matcpy(double* A, const double* B, int n, int m);
+/* multiply matrix (wrapper of blas dgemm) -------------------------------------
+* multiply matrix by matrix (C=alpha*A*B+beta*C)
+* args   : char   *tr       I  transpose flags ("N":normal,"T":transpose)
+*          int    n,k,m     I  size of (transposed) matrix A,B
+*          double alpha     I  alpha
+*          double *A,*B     I  (transposed) matrix A (n x m), B (m x k)
+*          double beta      I  beta
+*          double *C        IO matrix C (n x k)
+* return : none
+*-----------------------------------------------------------------------------*/
+void matmul(const char* tr, int n, int k, int m, double alpha,
+    const double* A, const double* B, double beta, double* C);
+/* inverse of matrix -----------------------------------------------------------
+* inverse of matrix (A=A^-1)
+* args   : double *A        IO  matrix (n x n)
+*          int    n         I   size of matrix A
+* return : status (0:ok,0>:error)
+*-----------------------------------------------------------------------------*/
+int  matinv(double* A, int n);
+/* transform ecef to geodetic postion ------------------------------------------
+* transform ecef position to geodetic position
+* args   : double *r        I   ecef position {x,y,z} (m)
+*          double *pos      O   geodetic position {lat,lon,h} (rad,m)
+* return : none
+* notes  : WGS84, ellipsoidal height
+*-----------------------------------------------------------------------------*/
+void ecef2pos(const double* r, double* pos);
+/* transform geodetic to ecef position -----------------------------------------
+* transform geodetic position to ecef position
+* args   : double *pos      I   geodetic position {lat,lon,h} (rad,m)
+*          double *r        O   ecef position {x,y,z} (m)
+* return : none
+* notes  : WGS84, ellipsoidal height
+*-----------------------------------------------------------------------------*/
+void pos2ecef(const double* pos, double* r);
+/* transform ecef vector to local tangental coordinate -------------------------
+* transform ecef vector to local tangental coordinate
+* args   : double *pos      I   geodetic position {lat,lon} (rad)
+*          double *r        I   vector in ecef coordinate {x,y,z}
+*          double *e        O   vector in local tangental coordinate {e,n,u}
+* return : none
+*-----------------------------------------------------------------------------*/
+void ecef2enu(const double pos, const double r, double* e);
+/* transform local vector to ecef coordinate -----------------------------------
+* transform local tangental coordinate vector to ecef
+* args   : double *pos      I   geodetic position {lat,lon} (rad)
+*          double *e_       I   vector in local tangental coordinate {e_,n,u}
+*          double *r        O   vector in ecef coordinate {x,y,z}
+* return : none
+*-----------------------------------------------------------------------------*/
+void enu2ecef(const double pos, const double e, double* r);
+/* transform covariance to local tangental coordinate --------------------------
+* transform ecef covariance to local tangental coordinate
+* args   : double *pos      I   geodetic position {lat,lon} (rad)
+*          double *P        I   covariance in ecef coordinate
+*          double *Q        O   covariance in local tangental coordinate
+* return : none
+*-----------------------------------------------------------------------------*/
+void covenu(const double pos, const double P, double* Q);
+/* transform local enu coordinate covariance to xyz-ecef -----------------------
+* transform local enu covariance to xyz-ecef coordinate
+* args   : double *pos      I   geodetic position {lat,lon} (rad)
+*          double *Q        I   covariance in local enu coordinate
+*          double *P        O   covariance in xyz-ecef coordinate
+* return : none
+*-----------------------------------------------------------------------------*/
+void covecef(const double* pos, const double* Q, double* P);
+/* ecef to local coordinate transfromation matrix ------------------------------
+* compute ecef to local coordinate transfromation matrix
+* args   : double *pos      I   geodetic position {lat,lon} (rad)
+*          double *E        O   ecef to local coord transformation matrix (3x3)
+* return : none
+* notes  : matirix stored by column-major order (fortran convention)
+*-----------------------------------------------------------------------------*/
+void xyz2enu(const double* pos, double* E);
+/* convert degree to deg-min-sec -----------------------------------------------
+* convert degree to degree-minute-second
+* args   : double deg       I   degree
+*          double *dms      O   degree-minute-second {deg,min,sec}
+* return : none
+*-----------------------------------------------------------------------------*/
+void deg2dms(double deg, double* dms);
+/* convert deg-min-sec to degree -----------------------------------------------
+* convert degree-minute-second to degree
+* args   : double *dms      I   degree-minute-second {deg,min,sec}
+* return : degree
+*-----------------------------------------------------------------------------*/
+double dms2deg(const double* dms);
+/* satellite carrier wave length -----------------------------------------------
+* get satellite carrier wave lengths
+* args   : int    sat       I   satellite number
+*          int    frq       I   frequency index (0:L1,1:L2,2:L5/3,...)
+*          nav_t  *nav      I   navigation messages
+* return : carrier wave length (m) (0.0: error)
+*-----------------------------------------------------------------------------*/
+double satwavelen(int sat, int frq, const nav_t* nav);
+/* satellite azimuth/elevation angle -------------------------------------------
+* compute satellite azimuth/elevation angle
+* args   : double *pos      I   geodetic position {lat,lon,h} (rad,m)
+*          double *e        I   receiver-to-satellilte unit vevtor (ecef)
+*          double *azel     IO  azimuth/elevation {az,el} (rad) (NULL: no output)
+*                               (0.0<=azel[0]<2*pi,-pi/2<=azel[1]<=pi/2)
+* return : elevation angle (rad)
+*-----------------------------------------------------------------------------*/
+double satazel(const double* pos, const double* e, float* azel);
+/* geometric distance ----------------------------------------------------------
+* compute geometric distance and receiver-to-satellite unit vector
+* args   : double *rs       I   satellilte position (ecef at transmission) (m)
+*          double *rr       I   receiver position (ecef at reception) (m)
+*          double *e        O   line-of-sight vector (ecef)
+* return : geometric distance (m) (0>:error/no satellite position)
+* notes  : distance includes sagnac effect correction
+*-----------------------------------------------------------------------------*/
+double geodist(const double* rs, const double* rr, double* e);
+/* compute dops ----------------------------------------------------------------
+* compute DOP (dilution of precision)
+* args   : int    ns        I   number of satellites
+*          double *azel     I   satellite azimuth/elevation angle (rad)
+*          double elmin     I   elevation cutoff angle (rad)
+*          double *dop      O   DOPs {GDOP,PDOP,HDOP,VDOP}
+* return : none
+* notes  : dop[0]-[3] return 0 in case of dop computation error
+*-----------------------------------------------------------------------------*/
+void dops(int ns, const double* azel, double elmin, double* dop);
+/* ionosphere model ------------------------------------------------------------
+* compute ionospheric delay by broadcast ionosphere model (klobuchar model)
+* args   : gtime_t t        I   time (gpst)
+*          double *ion      I   iono model parameters {a0,a1,a2,a3,b0,b1,b2,b3}
+*          double *pos      I   receiver position {lat,lon,h} (rad,m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+* return : ionospheric delay (L1) (m)
+*-----------------------------------------------------------------------------*/
+double ionmodel(gtime_t t, const float* ion, const double* pos, const float* azel);
+/* ionosphere mapping function -------------------------------------------------
+* compute ionospheric delay mapping function by single layer model
+* args   : double *pos      I   receiver position {lat,lon,h} (rad,m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+* return : ionospheric mapping function
+*-----------------------------------------------------------------------------*/
+double ionmapf(const double* pos, const double* azel);
+/* ionospheric pierce point position -------------------------------------------
+* compute ionospheric pierce point (ipp) position and slant factor
+* args   : double *pos      I   receiver position {lat,lon,h} (rad,m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+*          double re        I   earth radius (km)
+*          double hion      I   altitude of ionosphere (km)
+*          double *posp     O   pierce point position {lat,lon,h} (rad,m)
+* return : slant factor
+* notes  : see ref [2], only valid on the earth surface
+*          fixing bug on ref [2] A.4.4.10.1 A-22,23
+*-----------------------------------------------------------------------------*/
+double ionppp(const double* pos, const double* azel, double re, double hion, double* pppos);
+/* troposphere model -----------------------------------------------------------
+* compute tropospheric delay by standard atmosphere and saastamoinen model
+* args   : gtime_t time     I   time
+*          double *pos      I   receiver position {lat,lon,h} (rad,m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+*          double humi      I   relative humidity
+* return : tropospheric delay (m)
+*-----------------------------------------------------------------------------*/
+double tropmodel(gtime_t time, const vect3 pos, const float* azel, double humi);
+/* troposphere mapping function ------------------------------------------------
+* compute tropospheric mapping function by NMF
+* args   : gtime_t t        I   time
+*          double *pos      I   receiver position {lat,lon,h} (rad,m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+*          double *mapfw    IO  wet mapping function (NULL: not output)
+* return : dry mapping function
+* note   : see ref [5] (NMF) and [9] (GMF)
+*          original JGR paper of [5] has bugs in eq.(4) and (5). the corrected
+*          paper is obtained from:
+*          ftp://web.haystack.edu/pub/aen/nmf/NMF_JGR.pdf
+*-----------------------------------------------------------------------------*/
+double tropmapf(gtime_t time, const double* pos, const double* azel, double* mapfw);
+/* ionospheric correction ------------------------------------------------------
+* compute ionospheric correction
+* args   : gtime_t time     I   time
+*          nav_t  *nav      I   navigation data
+*          int    sat       I   satellite number
+*          double *pos      I   receiver position {lat,lon,h} (rad|m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+*          int    ionoopt   I   ionospheric correction option (IONOOPT_???)
+*          double *ion      O   ionospheric delay (L1) (m)
+*          double *var      O   ionospheric delay (L1) variance (m^2)
+* return : status(1:ok,0:error)
+*-----------------------------------------------------------------------------*/
+extern int ionocorr(gtime_t time, const nav_t* nav, int sat, const double* pos, const float* azel, int ionoopt, double* ion, double* var);
+/* tropospheric correction -----------------------------------------------------
+* compute tropospheric correction
+* args   : gtime_t time     I   time
+*          nav_t  *nav      I   navigation data
+*          double *pos      I   receiver position {lat,lon,h} (rad|m)
+*          double *azel     I   azimuth/elevation angle {az,el} (rad)
+*          int    tropopt   I   tropospheric correction option (TROPOPT_???)
+*          double *trp      O   tropospheric delay (m)
+*          double *var      O   tropospheric delay variance (m^2)
+* return : status(1:ok,0:error)
+*-----------------------------------------------------------------------------*/
+extern int tropcorr(gtime_t time, const nav_t* nav, const double* pos, const float* azel, int tropopt, double* trp, double* var);
+/* get selected satellite ephemeris -------------------------------------------
+* Get the selected satellite ephemeris.
+* args   : int    sys       I   satellite system (SYS_???)
+* return : selected ephemeris
+*            refer setseleph()
+*-----------------------------------------------------------------------------*/
+extern int getseleph(int sys);
+/* broadcast ephemeris to satellite clock bias ---------------------------------
+* compute satellite clock bias with broadcast ephemeris (gps, galileo, qzss)
+* args   : gtime_t time     I   time by satellite clock (gpst)
+*          eph_t *eph       I   broadcast ephemeris
+* return : satellite clock bias (s) without relativeity correction
+* notes  : see ref [1],[7],[8]
+*          satellite clock does not include relativity correction and tdg
+*-----------------------------------------------------------------------------*/
+extern double eph2clk(gtime_t time, const eph_t* eph);
+/* broadcast ephemeris to satellite position and clock bias --------------------
+* compute satellite position and clock bias with broadcast ephemeris (gps,
+* galileo, qzss)
+* args   : gtime_t time     I   time (gpst)
+*          eph_t *eph       I   broadcast ephemeris
+*          double *rs       O   satellite position (ecef) {x,y,z} (m)
+*          double *dts      O   satellite clock bias (s)
+*          double *var      O   satellite position and clock variance (m^2)
+* return : none
+* notes  : see ref [1],[7],[8]
+*          satellite clock includes relativity correction without code bias
+*          (tgd or bgd)
+*-----------------------------------------------------------------------------*/
+extern double geph2clk(gtime_t time, const geph_t* geph);
+/* sbas ephemeris to satellite clock bias --------------------------------------
+* compute satellite clock bias with sbas ephemeris
+* args   : gtime_t time     I   time by satellite clock (gpst)
+*          seph_t *seph     I   sbas ephemeris
+* return : satellite clock bias (s)
+* notes  : see ref [3]
+*-----------------------------------------------------------------------------*/
+extern double seph2clk(gtime_t time, const seph_t* seph);
+/* broadcast ephemeris to satellite position and clock bias --------------------
+* compute satellite position and clock bias with broadcast ephemeris (gps,
+* galileo, qzss)
+* args   : gtime_t time     I   time (gpst)
+*          eph_t *eph       I   broadcast ephemeris
+*          double *rs       O   satellite position (ecef) {x,y,z} (m)
+*          double *dts      O   satellite clock bias (s)
+*          double *var      O   satellite position and clock variance (m^2)
+* return : none
+* notes  : see ref [1],[7],[8]
+*          satellite clock includes relativity correction without code bias
+*          (tgd or bgd)
+*-----------------------------------------------------------------------------*/
+extern void eph2pos(gtime_t time, const eph_t* eph, double* rs, float* dts, float* var);
+/* glonass ephemeris to satellite position and clock bias ----------------------
+* compute satellite position and clock bias with glonass ephemeris
+* args   : gtime_t time     I   time (gpst)
+*          geph_t *geph     I   glonass ephemeris
+*          double *rs       O   satellite position {x,y,z} (ecef) (m)
+*          double *dts      O   satellite clock bias (s)
+*          double *var      O   satellite position and clock variance (m^2)
+* return : none
+* notes  : see ref [2]
+*-----------------------------------------------------------------------------*/
+extern void geph2pos(gtime_t time, const geph_t* geph, double* rs, float* dts, float* var);
+/* sbas ephemeris to satellite position and clock bias -------------------------
+* compute satellite position and clock bias with sbas ephemeris
+* args   : gtime_t time     I   time (gpst)
+*          seph_t  *seph    I   sbas ephemeris
+*          double  *rs      O   satellite position {x,y,z} (ecef) (m)
+*          double  *dts     O   satellite clock bias (s)
+*          double  *var     O   satellite position and clock variance (m^2)
+* return : none
+* notes  : see ref [3]
+*-----------------------------------------------------------------------------*/
+extern void seph2pos(gtime_t time, const seph_t* seph, double* rs, double* dts, double* var);
+/* satellite position/clock by precise ephemeris/clock -------------------------
+* compute satellite position/clock with precise ephemeris/clock
+* args   : gtime_t time       I   time (gpst)
+*          int    sat         I   satellite number
+*          nav_t  *nav        I   navigation data
+*          int    opt         I   sat postion option
+*                                 (0: center of mass, 1: antenna phase center)
+*          double *rs         O   sat position and velocity (ecef)
+*                                 {x,y,z,vx,vy,vz} (m|m/s)
+*          double *dts        O   sat clock {bias,drift} (s|s/s)
+*          double *var        IO  sat position and clock error variance (m)
+*                                 (NULL: no output)
+* return : status (1:ok,0:error or data outage)
+* notes  : clock includes relativistic correction but does not contain code bias
+*          before calling the function, nav->peph, nav->ne, nav->pclk and
+*          nav->nc must be set by calling readsp3(), readrnx() or readrnxt()
+*          if precise clocks are not set, clocks in sp3 are used instead
+*-----------------------------------------------------------------------------*/
+extern int  peph2pos(gtime_t time, int sat, const nav_t* nav, int opt, double* rs, float* dts, float* var);
+/* satellite antenna phase center offset ---------------------------------------
+* compute satellite antenna phase center offset in ecef
+* args   : gtime_t time       I   time (gpst)
+*          double *rs         I   satellite position and velocity (ecef)
+*                                 {x,y,z,vx,vy,vz} (m|m/s)
+*          int    sat         I   satellite number
+*          nav_t  *nav        I   navigation data
+*          double *dant       I   satellite antenna phase center offset (ecef)
+*                                 {dx,dy,dz} (m) (iono-free LC value)
+* return : none
+*-----------------------------------------------------------------------------*/
+extern void satantoff(gtime_t time, const double* rs, int sat, const nav_t* nav, double* dant);
+
+
+/* broadcast ephemeris to satellite clock bias ---------------------------------
+* compute satellite clock bias using broadcast ephemeris (GPS, Galileo, QZSS)
+* args   : gtime_t time     I   time at which to compute clock bias (gpst)
+*          gtime_t teph     I   ephemeris reference time (gpst)
+*          int    sat       I   satellite number
+*          nav_t  *nav      I   navigation data
+*          double *dts      O   satellite clock bias (s)
+* return : int              O   status (1:ok, 0:error)
+* notes  : 
+*   - Computes the satellite clock bias at the specified time using the broadcast ephemeris.
+*   - The result does not include relativity correction or code bias.
+*   - Returns 1 on success, 0 on failure (e.g., no valid ephemeris).
+*-----------------------------------------------------------------------------
+*/
+extern int ephclk(gtime_t time, gtime_t teph, int sat, const nav_t* nav, float* dts);
+/* satellite position and clock ------------------------------------------------
+* compute satellite position, velocity and clock
+* args   : gtime_t time     I   time (gpst)
+*          gtime_t teph     I   time to select ephemeris (gpst)
+*          int    sat       I   satellite number
+*          nav_t  *nav      I   navigation data
+*          int    ephopt    I   ephemeris option (EPHOPT_???)
+*          double *rs       O   sat position and velocity (ecef)
+*                               {x,y,z,vx,vy,vz} (m|m/s)
+*          double *dts      O   sat clock {bias,drift} (s|s/s)
+*          double *var      O   sat position and clock error variance (m^2)
+*          int    *svh      O   sat health flag (-1:correction not available)
+* return : status (1:ok,0:error)
+* notes  : satellite position is referenced to antenna phase center
+*          satellite clock does not include code bias correction (tgd or bgd)
+*-----------------------------------------------------------------------------*/
+extern int  satpos(gtime_t time, gtime_t teph, int sat, int ephopt, const nav_t* nav,
+    double* rs, float* dts, float* var, uint16_t* svh);
+
+/* read sp3 precise ephemeris file ---------------------------------------------
+* read sp3 precise ephemeris/clock files and set them to navigation data
+* args   : char   *file       I   sp3-c precise ephemeris file
+*                                 (wind-card * is expanded)
+*          nav_t  *nav        IO  navigation data
+*          int    opt         I   options (1: only observed + 2: only predicted +
+*                                 4: not combined)
+* return : none
+* notes  : see ref [1]
+*          precise ephemeris is appended and combined
+*          nav->peph and nav->ne must by properly initialized before calling the
+*          function
+*          only files with extensions of .sp3, .SP3, .eph* and .EPH* are read
+*-----------------------------------------------------------------------------*/
+extern void readsp3(const char* file, nav_t* nav, int opt);
+
+/* pseudorange measurement error variance ------------------------------------
+* Compute the variance of pseudorange measurement errors.
+* args   : const prcopt_t *opt I   processing options
+*          double el           I   satellite elevation angle (radians)
+*          int    sys          I   satellite system (SYS_GPS, SYS_GLO, etc.)
+* return : double              O   variance of pseudorange measurement errors [m^2]
+* notes  :
+*   - This function calculates the variance of pseudorange measurement errors
+*     based on the satellite system, elevation angle, and processing options.
+*   - The variance is scaled by a factor specific to the satellite system:
+*       - GPS: `EFACT_GPS`
+*       - GLONASS: `EFACT_GLO`
+*       - SBAS: `EFACT_SBS`
+*   - For ionosphere-free combinations, an additional scaling factor is applied.
+*-----------------------------------------------------------------------------*/
+extern double varerr(int ionoopt, double el, int sys);
+
+/* pseudorange with code bias correction -------------------------------------
+* Compute pseudorange with code bias correction.
+* args   : const obsd_t *obs  I   observation data for a single satellite
+*          const nav_t  *nav  I   navigation data
+*          const double *azel I   azimuth/elevation angles {az, el} [rad]
+*          int    iter        I   iteration number (0 for the first iteration)
+*          const prcopt_t *opt I  processing options
+*          double *var        O   pseudorange measurement variance [m^2]
+* return : double             O   corrected pseudorange [m] (0.0 if invalid)
+* notes  :
+*   - This function computes the pseudorange measurement for a satellite,
+*     applying corrections for ionospheric delay, tropospheric delay, and
+*     code biases.
+*   - Dual-frequency or single-frequency measurements are supported.
+*   - If the signal-to-noise ratio (SNR) is below a threshold, the measurement
+*     is rejected.
+*   - The function also handles Differential Code Biases (DCB) and Total Group
+*     Delay (TGD) corrections.
+*-----------------------------------------------------------------------------*/
+extern double prange(const obsd_t* obs, const nav_t* nav, const double* azel,
+    int iter, snrmask_t* mask, int ionoopt, double* var);
+
 class KFAPP :public SINSGNSSBorad
 {
 public:
