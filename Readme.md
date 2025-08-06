@@ -1,7 +1,6 @@
 # 概述
 
 **为应对频繁工作环境被损坏导致的数据、代码及工具丢失风险（即便采用移动硬盘备份仍存在意外删除的可能），特将部分技术资料、算法实现及学习心得集中归档于此文档。**  \
-GITHUB的readme格式存在异常，使用VSCODE 打开后公式正常
 
 文档主体规划为六个章节：
 1.  **第一章节** - 简单阐述惯性导航的软件实现。
@@ -15,7 +14,6 @@ GITHUB的readme格式存在异常，使用VSCODE 打开后公式正常
 
 ## 1.  惯性导航基础与建模
 **本节内容主要参考并基于[PSINS](https://psins.org.cn/)开源惯性导航算法库的框架与思想构建，并针对当前版本程序给出关键建模说明。**
-
 ### 1.1  惯性导航基本原理
 惯性导航（Inertial Navigation, IN）的核心原理在于利用惯性测量单元（IMU）提供的原始数据：
 1.  **角速度测量**：IMU中的陀螺仪测量载体坐标系（b系）相对于惯性坐标系（i系）的角速度$\boldsymbol{\omega}_{ib}^{b}$。
@@ -34,24 +32,29 @@ GITHUB的readme格式存在异常，使用VSCODE 打开后公式正常
 ##### 1.2.1.1 空间安装误差与时间同步误差
 **a. 陀螺杆臂效应**  
 当陀螺仪与IMU参考点存在空间偏移时，载体旋转运动导致陀螺敏感到附加角速度：
-$$\Delta\boldsymbol{\omega}_{arm} = \frac{1}{2} \left( 
-\underbrace{\boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_g \times \boldsymbol{\omega}_{ib}^b)}_{\text{离心项（向心加速度引起）}} 
-+ \underbrace{\boldsymbol{r}_g \times \dot{\boldsymbol{\omega}}_{ib}^b}_{\text{欧拉项（切向加速度引起）}} 
-\right)$$
+$$
+\Delta\boldsymbol{\omega}_{lever} = 0.5*\boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_g \times \boldsymbol{\omega}_{ib}^b) + 0.5*\boldsymbol{r}_g \times \dot{\boldsymbol{\omega}}_{ib}^b
+$$
+- **离心项**：$\boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_g \times \boldsymbol{\omega}_{ib}^b)$（向心加速度引起）
+- **欧拉项**：$\boldsymbol{r}_g \times \dot{\boldsymbol{\omega}}_{ib}^b$（切向加速度引起）
+
 其中$\boldsymbol{r}_g \in \mathbb{R}^3$为陀螺仪到IMU参考点的杆臂矢量（单位：m）。  
 *工程补偿*：精密机械安装 + 标定后软件补偿（需已知$\boldsymbol{r}_g$和角加速度）
 
 **b. 加速度计杆臂效应**  
 加速度计空间偏移导致比力测量误差：
 $$
-\Delta\boldsymbol{f}_{arm} =  
-\underbrace{\boldsymbol{r}_a \times \dot{\boldsymbol{\omega}}_{ib}^b}_{\text{切向加速度项}} 
-+ \underbrace{\boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_a \times \boldsymbol{\omega}_{ib}^b)}_{\text{向心加速度项}} 
-+ \underbrace{2\boldsymbol{\omega}_{ib}^b \times \boldsymbol{v}_{rel}^b}_{\text{科氏力项}}
+\Delta\boldsymbol{f}_{lever} = \boldsymbol{r}_a \times \dot{\boldsymbol{\omega}}_{ib}^b + \boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_a \times \boldsymbol{\omega}_{ib}^b) +  2\boldsymbol{\omega}_{ib}^b \times \boldsymbol{v}_{\text{rel}}^b
 $$
-其中$\boldsymbol{r}_a \in \mathbb{R}^3$为加速度计杆臂矢量，$\boldsymbol{v}_{rel}^b$为杆臂引起的相对速度。  
-*注*：当$\boldsymbol{r}_a = \boldsymbol{r}_g$时，杆臂效应模型可统一表述。
+- **切向加速度项**：$\boldsymbol{r}_a \times \dot{\boldsymbol{\omega}}_{ib}^b$
+- **向心加速度项**：$\boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_a \times \boldsymbol{\omega}_{ib}^b)$
+- **科氏力项**：$2\boldsymbol{\omega}_{ib}^b \times \boldsymbol{v}_{\text{rel}}^b$
 
+其中：
+- $\boldsymbol{r}_a \in \mathbb{R}^3$：加速度计杆臂矢量
+- $\boldsymbol{v}_{\text{rel}}^b$：杆臂引起的相对速度
+
+*注*：当$\boldsymbol{r}_a = \boldsymbol{r}_g$时，杆臂效应模型可统一表述。
 **c. 时间同步误差**  
 传感器采样时刻偏差导致相位延迟：
 $$
@@ -88,13 +91,7 @@ $$\begin{aligned}
 **c. 非正交误差与安装偏差**  
 轴系失准变换矩阵：
 $$
-\boldsymbol{T} = 
-\begin{bmatrix}
-1 & -\beta_{yz} & \beta_{zy} \\
-\beta_{xz} & 1 & -\beta_{zx} \\
--\beta_{xy} & \beta_{yx} & 1
-\end{bmatrix}
-+ \mathrm{diag}([\delta_{xx}, \delta_{yy}, \delta_{zz}])
+\boldsymbol{T}=\begin{bmatrix}1&-\beta_{yz}&\beta_{zy}\\\beta_{xz}&1&-\beta_{zx}\\-\beta_{xy}&\beta_{yx}&1\end{bmatrix}+\mathrm{diag}([\delta_{xx},\delta_{yy},\delta_{zz}])
 $$
 - 非对角元素$\beta$：轴间非正交角（单位：rad）
 - 对角元素$\delta$：安装位置偏差（单位：m）
@@ -257,6 +254,233 @@ $$\delta\dot{p}=M_{pv}\delta v^{n}+M_{pp}\delta p$$
 其中，
 $$\boldsymbol{M}_{pv}=\begin{bmatrix}0&1/R_{Mh}&0\\\sec L/R_{Nh}&0&0\\0&0&1\end{bmatrix}$$
 $$\left.\boldsymbol{M}_{pp}=\left\lfloor\begin{array}{ccc}{0}&{0}&{-\nu_{_\mathrm{N}}/R_{_\mathrm{Mh}}^{2}}\\{v_{_\mathrm{E}}\sec L\tan L/R_{_\mathrm{Nh}}}&{0}&{-\nu_{_\mathrm{E}}\sec L/R_{_\mathrm{Nh}}^{2}}\\{0}&{0}&{0}\end{array}\right.\right\rfloor$$
+
+## 1.7 IMU系统级标定（误差方程在器件级标定中的应用）
+**参考文献**：谢波, 秦永元, 万彦辉. 激光陀螺捷联惯导系统多位置标定方法[J]. 中国惯性技术学报, 2011, 19(2): 157-162, 169
+
+### 1.7.1 误差模型建立
+在载体坐标系（b系）建立IMU误差模型：
+
+**加速度计误差模型**：
+$$ 
+\delta \boldsymbol{f}^{b} = 
+\begin{bmatrix}
+\delta f_x^{b} \\ 
+\delta f_y^{b} \\ 
+\delta f_z^{b}
+\end{bmatrix} = 
+\begin{bmatrix}
+K_{ax} \\ 
+K_{ay} \\ 
+K_{az}
+\end{bmatrix} + 
+\begin{bmatrix}
+K_{axx} & 0 & 0 \\ 
+K_{ayx} & K_{ayy} & 0 \\ 
+K_{azx} & K_{azy} & K_{azz}
+\end{bmatrix}
+\begin{bmatrix}
+f_x^{b} \\ 
+f_y^{b} \\ 
+f_z^{b}
+\end{bmatrix}
+$$
+其中：
+- $\delta f_I^{b} (I=x,y,z)$：加速度计测量误差
+- $f_I^{b}$：加速度计理想输出值
+- $K_{aI}$：加速度计零偏（bias）
+- $K_{aII}$：加速度计标度因数误差
+- 非对角元素：加速度计安装误差系数
+
+**陀螺仪误差模型**：
+$$ 
+\delta \boldsymbol{\omega}_{ib}^{b} = 
+\begin{bmatrix}
+\delta \omega_{ibx}^{b} \\ 
+\delta \omega_{iby}^{b} \\ 
+\delta \omega_{ibz}^{b}
+\end{bmatrix} = 
+\begin{bmatrix}
+D_{gx} \\ 
+D_{gy} \\ 
+D_{gz}
+\end{bmatrix} + 
+\begin{bmatrix}
+E_{gxx} & E_{gxy} & E_{gxz} \\ 
+E_{gyx} & E_{gyy} & E_{gyz} \\ 
+E_{gzx} & E_{gzy} & E_{gzz}
+\end{bmatrix}
+\begin{bmatrix}
+\omega_{ibx}^{b} \\ 
+\omega_{iby}^{b} \\ 
+\omega_{ibz}^{b}
+\end{bmatrix}
+$$
+其中：
+- $\delta \omega_{ibI}^{b} (I=x,y,z)$：陀螺仪测量误差
+- $\omega_{ibI}^{b}$：陀螺仪理想输出值
+- $D_{gI}$：陀螺仪常值漂移
+- $E_{gII}$：陀螺仪标度因数误差
+- 非对角元素：陀螺仪安装误差系数
+
+### 1.7.2 导航误差方程
+捷联惯导系统误差方程为：
+$$
+\begin{aligned}
+\delta \dot{\boldsymbol{\nu}}^{n} &= \boldsymbol{f}^{n} \times \boldsymbol{\phi} - (2\boldsymbol{\omega}_{ie}^{n} + \boldsymbol{\omega}_{en}^{n}) \times \delta \boldsymbol{\nu}^{n} \\
+&- (2\delta \boldsymbol{\omega}_{ie}^{n} + \delta \boldsymbol{\omega}_{en}^{n}) \times \boldsymbol{\nu}^{n} + \delta \boldsymbol{f}^{n} \\
+\dot{\boldsymbol{\phi}} &= \delta \boldsymbol{\omega}_{ie}^{n} + \delta \boldsymbol{\omega}_{en}^{n} - (\boldsymbol{\omega}_{ie}^{n} + \boldsymbol{\omega}_{en}^{n}) \times \boldsymbol{\phi} - \delta \boldsymbol{\omega}_{ib}^{n}
+\end{aligned}
+$$
+其中：
+- $\delta \dot{\boldsymbol{\nu}}^{n}$：速度误差导数
+- $\dot{\boldsymbol{\phi}}$：姿态误差导数
+- $\delta \boldsymbol{f}^{n}$：n系加速度计测量误差
+- $\delta \boldsymbol{\omega}_{ib}^{n}$：n系陀螺仪测量误差
+
+### 1.7.3 静态标定简化模型
+在静态标定条件下：
+$$
+\begin{gathered}
+\boldsymbol{\nu}^{n} = 0, \quad 
+\delta \boldsymbol{\omega}_{ie}^{n} = 0, \quad 
+\delta \boldsymbol{\omega}_{en}^{n} \approx 0 \\
+\boldsymbol{f}^{n} = \begin{bmatrix} 0 & 0 & -g \end{bmatrix}^{T}, \quad 
+\boldsymbol{\omega}_{ie}^{n} = \begin{bmatrix} \omega_{ie} \cos L & 0 & \omega_{ie} \sin L \end{bmatrix}^{T}
+\end{gathered}
+$$
+其中：
+- $g$：当地重力加速度
+- $\omega_{ie}$：地球自转角速率
+- $L$：标定位置纬度
+
+取n系为东北天（ENU）地理坐标系，忽略牵连加速度项$-2\boldsymbol{\omega}_{ie}^{n} \times \delta \boldsymbol{\nu}^{n}$，得到简化误差方程：
+$$
+\begin{cases}
+\delta \dot{\nu}_E^{n} = \delta f_E^{n} \\
+\delta \dot{\nu}_N^{n} = \delta f_N^{n} \\
+\delta \dot{\nu}_U^{n} = g \phi_N + \delta f_U^{n}
+\end{cases}
+$$
+
+### 1.7.4 多位置标定方法
+#### 标定原理
+在标定过程中，设备静止状态下的速度误差由各项误差参数产生。当系统从一个位置翻转到另一个位置时，短时间内静态导航速度误差由惯性器件误差激励产生。通过设计一系列不同方位的机动，可激励出不同的误差参数，进而通过参数辨识实现全参数标定。
+
+#### 标定流程设计
+1. **转动方案**：
+   - 设备绕三轴（X,Y,Z）每个轴正转3次，反转3次，共18次转动
+   - 每次转动时间：<10s
+   - 每次静止时间：>300s
+   - 总标定时间：≈1.5小时
+
+2. **位置序列**：
+   | 位置序号 | 初始方位 | 转动操作 |
+   |----------|----------|----------|
+   | 1        | 东北天   | $+ox_b$  |
+   | 2        | 东天南   | $+ox_b$  |
+   | 3        | 东南地   | $+ox_b$  |
+   | 4        | 东地北   | $-ox_b$  |
+   | 5        | 东南地   | $-ox_b$  |
+   | 6        | 东天南   | $-ox_b$  |
+   | 7        | 东北天   | $+oy_b$  |
+   | 8        | 地北东   | $+oy_b$  |
+   | 9        | 西北地   | $+oy_b$  |
+   | 10       | 天北西   | $-oy_b$  |
+   | 11       | 西北地   | $-oy_b$  |
+   | 12       | 地北东   | $-oy_b$  |
+   | 13       | 东北天   | $+oz_b$  |
+   | 14       | 北西天   | $+oz_b$  |
+   | 15       | 西南天   | $+oz_b$  |
+   | 16       | 南东天   | $-oz_b$  |
+   | 17       | 西南天   | $-oz_b$  |
+   | 18       | 北西天   | $-oz_b$  |
+   | 19       | 东北天   | 停止     |
+
+### 1.7.5 MEMS器件标定适配
+#### 特殊考虑
+上述流程适用于可静态初始化的光纤IMU系统。对于无法精确初始化的MEMS系统，需采用以下改进方案：
+
+1. **初始对准**：
+   - 采用双矢量定姿方法
+   - 使用陀螺输出进行粗对准
+
+2. **联合滤波**：
+   - 使用滤波方法将各阶段数据联合处理（非独立辨识）
+   - 建立全流程状态空间模型
+
+#### MEMS误差建模
+考虑MEMS器件特性，建立简化误差模型： \
+**陀螺误差**：
+$$ \delta \boldsymbol{\omega}_{ib}^{b} = \boldsymbol{K}_g \cdot \boldsymbol{\omega}_{ib}^{b} - (\boldsymbol{e}_b + \boldsymbol{g}_{sens} \cdot \boldsymbol{f}_{ib}^{b}) \cdot t_s $$
+**加速度计误差**：
+$$ \boldsymbol{f}_{ib}^{b} = \boldsymbol{K}_a \cdot \boldsymbol{f}_{ib}^{b} - (\boldsymbol{d}_b + \boldsymbol{K}_{ap} \cdot |\boldsymbol{f}_{ib}^{b}|) \cdot t_s $$
+
+#### 状态空间模型
+**状态向量**（42维）：
+$$ \boldsymbol{X}_k = 
+\begin{bmatrix} 
+\boldsymbol{\phi} & \delta \boldsymbol{v}^n & \boldsymbol{e}_b & \boldsymbol{d}_b & \delta \boldsymbol{K}_g & \delta \boldsymbol{K}_a & \delta \boldsymbol{K}_{ap} & \boldsymbol{g}_{sens} 
+\end{bmatrix}
+ $$
+
+
+**状态转移矩阵**：
+$$
+\boldsymbol{F} = \begin{bmatrix}
+-\boldsymbol{\omega}_{\times} & \boldsymbol{0}_{3\times3} & -\boldsymbol{C}_b^n & \boldsymbol{0}_{3\times3} & -\boldsymbol{\omega}_x \boldsymbol{C}_b^n & -\boldsymbol{\omega}_y \boldsymbol{C}_b^n & -\boldsymbol{\omega}_z \boldsymbol{C}_b^n & \boldsymbol{0}_{3\times3} & \boldsymbol{0}_{3\times3} & \boldsymbol{0}_{3\times3} & \boldsymbol{0}_{3\times3} & -\boldsymbol{f}_x \boldsymbol{C}_b^n & -\boldsymbol{f}_y \boldsymbol{C}_b^n & -\boldsymbol{f}_z \boldsymbol{C}_b^n \\
+\boldsymbol{f}_{\times} & \boldsymbol{0}_{3\times3} & \boldsymbol{0}_{3\times3} & \boldsymbol{C}_b^n & \boldsymbol{0}_{3\times3} & \boldsymbol{0}_{3\times3} & \boldsymbol{0}_{3\times3} & \boldsymbol{f}_x \boldsymbol{C}_b^n & \boldsymbol{f}_y \boldsymbol{C}_b^n & \boldsymbol{f}_z \boldsymbol{C}_b^n & \boldsymbol{C}_b^n \cdot \text{diag}(|\boldsymbol{f}_b|) & \boldsymbol{0}_{3\times3} & \boldsymbol{0}_{3\times3} & \boldsymbol{0}_{3\times3} \\
+\boldsymbol{0}_{36\times42}
+\end{bmatrix}
+$$
+
+**状态转移矩阵**：
+| $\boldsymbol{\phi}$  | $\delta vn$ | $eb$ | $db$ | $\delta Kg(:,1)$ | $\delta Kg(:,2)$ | $\delta Kg(:,3)$ | $\delta Ka(:,1)$ | $\delta Ka(:,2)$ | $\delta Ka(:,3)$ | $\delta Kap$ | $gSens(:,1)$ | $gSens(:,2)$ | $gSens(:,3)$ |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | 
+| $-w_x$ | $0_{33}$ | $-C_n^b$ | $0_{33}$ | $-w_xC_n^b$ | $-w_yC_n^b$ | $-w_zC_n^b$ | $0_{33}$ |  $0_{33}$ | $0_{33}$ | $0_{33}$ | $-f_xC_n^b$ | $-f_yC_n^b$ | $-f_zC_n^b$ |
+| $f_X$ | $0_{33}$ | $0_{33}$| $C_n^b$ | $0_{33}$ | $0_{33}$ | $0_{33}$ | $f_xC_n^b$ | $f_yC_n^b$ | $f_zC_n^b$ | $C_n^b*diag(abs(fb))$ |  $0_{33}$ | $0_{33}$ | $0_{33}$ |
+| $0_{36*42}$ |
+
+
+**量测方程**：
+量测量为零速与零角速度条件：
+$$ \boldsymbol{z}_k =
+\begin{bmatrix} 
+\delta \boldsymbol{v}^n \\ 
+\delta \boldsymbol{\phi} 
+\end{bmatrix}
+ $$
+**量测矩阵：**
+$$
+\boldsymbol{H} = 
+\begin{bmatrix}
+\boldsymbol{0}_{3\times3} & \boldsymbol{I}_{3\times3} & \boldsymbol{0}_{3\times36} \\
+0,0,1 & \boldsymbol{0}_{1\times39}
+\end{bmatrix}
+$$
+
+| $\boldsymbol{\phi}$  | $\delta vn$ | $eb$ | $db$ | $\delta Kg(:,1)$ | $\delta Kg(:,2)$ | $\delta Kg(:,3)$ | $\delta Ka(:,1)$ | $\delta Ka(:,2)$ | $\delta Ka(:,3)$ | $\delta Kap$ | $gSens(:,1)$ | $gSens(:,2)$ | $gSens(:,3)$ |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | 
+| $0_{33}$ | $I_{33}$ | $0_{3*36}$  |
+| $0,0,1$ | $0_{1*39} $ |
+
+#### 迭代优化
+1. 初始化：双矢量定姿
+2. 迭代次数：>=5次
+3. 每次迭代后更新参数并重新处理
+
+**matlab实现见 sysclbtMEMS 函数。**
+
+### 1.8 转台模拟吊舱转动
+**参考文献**：翁浚,刘健宁,寇科,等.吊舱SINS/GNSS组合导航多杆臂效应在线估计算法[J].中国惯性技术学报,2021,29(02):184-190.DOI:10.13695/j.cnki.12-1222/o3.2021.02.007.
+使用转台模拟吊舱的转动，确认实时A25a的程序能否能跟踪到A25的航向变化。
+
+### 1.8.1 约束限制
+由于实时
+
+
+
+
 
 ## 2. GNSS定位基础与定位原理
 **本节内容主要参考并基于[RTKlib](https://www.rtklib.com/)开源GNSS算法库的框架构建（v2.4.3），重点说明关键模型实现细节。**
