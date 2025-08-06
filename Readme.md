@@ -1,7 +1,6 @@
 # 概述
 
 **为应对频繁工作环境被损坏导致的数据、代码及工具丢失风险（即便采用移动硬盘备份仍存在意外删除的可能），特将部分技术资料、算法实现及学习心得集中归档于此文档。**  \
-GITHUB的readme格式存在异常，使用VSCODE 打开后公式正常
 
 文档主体规划为六个章节：
 1.  **第一章节** - 简单阐述惯性导航的软件实现。
@@ -15,7 +14,6 @@ GITHUB的readme格式存在异常，使用VSCODE 打开后公式正常
 
 ## 1.  惯性导航基础与建模
 **本节内容主要参考并基于[PSINS](https://psins.org.cn/)开源惯性导航算法库的框架与思想构建，并针对当前版本程序给出关键建模说明。**
-
 ### 1.1  惯性导航基本原理
 惯性导航（Inertial Navigation, IN）的核心原理在于利用惯性测量单元（IMU）提供的原始数据：
 1.  **角速度测量**：IMU中的陀螺仪测量载体坐标系（b系）相对于惯性坐标系（i系）的角速度$\boldsymbol{\omega}_{ib}^{b}$。
@@ -34,24 +32,29 @@ GITHUB的readme格式存在异常，使用VSCODE 打开后公式正常
 ##### 1.2.1.1 空间安装误差与时间同步误差
 **a. 陀螺杆臂效应**  
 当陀螺仪与IMU参考点存在空间偏移时，载体旋转运动导致陀螺敏感到附加角速度：
-$$\Delta\boldsymbol{\omega}_{arm} = \frac{1}{2} \left( 
-\underbrace{\boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_g \times \boldsymbol{\omega}_{ib}^b)}_{\text{离心项（向心加速度引起）}} 
-+ \underbrace{\boldsymbol{r}_g \times \dot{\boldsymbol{\omega}}_{ib}^b}_{\text{欧拉项（切向加速度引起）}} 
-\right)$$
+$$
+\Delta\boldsymbol{\omega}_{lever} = 0.5*\boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_g \times \boldsymbol{\omega}_{ib}^b) + 0.5*\boldsymbol{r}_g \times \dot{\boldsymbol{\omega}}_{ib}^b
+$$
+- **离心项**：$\boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_g \times \boldsymbol{\omega}_{ib}^b)$（向心加速度引起）
+- **欧拉项**：$\boldsymbol{r}_g \times \dot{\boldsymbol{\omega}}_{ib}^b$（切向加速度引起）
+
 其中$\boldsymbol{r}_g \in \mathbb{R}^3$为陀螺仪到IMU参考点的杆臂矢量（单位：m）。  
 *工程补偿*：精密机械安装 + 标定后软件补偿（需已知$\boldsymbol{r}_g$和角加速度）
 
 **b. 加速度计杆臂效应**  
 加速度计空间偏移导致比力测量误差：
 $$
-\Delta\boldsymbol{f}_{arm} =  
-\underbrace{\boldsymbol{r}_a \times \dot{\boldsymbol{\omega}}_{ib}^b}_{\text{切向加速度项}} 
-+ \underbrace{\boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_a \times \boldsymbol{\omega}_{ib}^b)}_{\text{向心加速度项}} 
-+ \underbrace{2\boldsymbol{\omega}_{ib}^b \times \boldsymbol{v}_{rel}^b}_{\text{科氏力项}}
+\Delta\boldsymbol{f}_{lever} = \boldsymbol{r}_a \times \dot{\boldsymbol{\omega}}_{ib}^b + \boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_a \times \boldsymbol{\omega}_{ib}^b) +  2\boldsymbol{\omega}_{ib}^b \times \boldsymbol{v}_{\text{rel}}^b
 $$
-其中$\boldsymbol{r}_a \in \mathbb{R}^3$为加速度计杆臂矢量，$\boldsymbol{v}_{rel}^b$为杆臂引起的相对速度。  
-*注*：当$\boldsymbol{r}_a = \boldsymbol{r}_g$时，杆臂效应模型可统一表述。
+- **切向加速度项**：$\boldsymbol{r}_a \times \dot{\boldsymbol{\omega}}_{ib}^b$
+- **向心加速度项**：$\boldsymbol{\omega}_{ib}^b \times (\boldsymbol{r}_a \times \boldsymbol{\omega}_{ib}^b)$
+- **科氏力项**：$2\boldsymbol{\omega}_{ib}^b \times \boldsymbol{v}_{\text{rel}}^b$
 
+其中：
+- $\boldsymbol{r}_a \in \mathbb{R}^3$：加速度计杆臂矢量
+- $\boldsymbol{v}_{\text{rel}}^b$：杆臂引起的相对速度
+
+*注*：当$\boldsymbol{r}_a = \boldsymbol{r}_g$时，杆臂效应模型可统一表述。
 **c. 时间同步误差**  
 传感器采样时刻偏差导致相位延迟：
 $$
@@ -88,13 +91,7 @@ $$\begin{aligned}
 **c. 非正交误差与安装偏差**  
 轴系失准变换矩阵：
 $$
-\boldsymbol{T} = 
-\begin{bmatrix}
-1 & -\beta_{yz} & \beta_{zy} \\
-\beta_{xz} & 1 & -\beta_{zx} \\
--\beta_{xy} & \beta_{yx} & 1
-\end{bmatrix}
-+ \mathrm{diag}([\delta_{xx}, \delta_{yy}, \delta_{zz}])
+\boldsymbol{T}=\begin{bmatrix}1&-\beta_{yz}&\beta_{zy}\\\beta_{xz}&1&-\beta_{zx}\\-\beta_{xy}&\beta_{yx}&1\end{bmatrix}+\mathrm{diag}([\delta_{xx},\delta_{yy},\delta_{zz}])
 $$
 - 非对角元素$\beta$：轴间非正交角（单位：rad）
 - 对角元素$\delta$：安装位置偏差（单位：m）
@@ -437,6 +434,7 @@ $$
 \end{bmatrix}
 $$
 
+**状态转移矩阵**：
 | $\boldsymbol{\phi}$  | $\delta vn$ | $eb$ | $db$ | $\delta Kg(:,1)$ | $\delta Kg(:,2)$ | $\delta Kg(:,3)$ | $\delta Ka(:,1)$ | $\delta Ka(:,2)$ | $\delta Ka(:,3)$ | $\delta Kap$ | $gSens(:,1)$ | $gSens(:,2)$ | $gSens(:,3)$ |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | 
 | $-w_x$ | $0_{33}$ | $-C_n^b$ | $0_{33}$ | $-w_xC_n^b$ | $-w_yC_n^b$ | $-w_zC_n^b$ | $0_{33}$ |  $0_{33}$ | $0_{33}$ | $0_{33}$ | $-f_xC_n^b$ | $-f_yC_n^b$ | $-f_zC_n^b$ |
@@ -452,7 +450,7 @@ $$ \boldsymbol{z}_k =
 \delta \boldsymbol{\phi} 
 \end{bmatrix}
  $$
-量测矩阵：
+**量测矩阵：**
 $$
 \boldsymbol{H} = 
 \begin{bmatrix}
@@ -468,8 +466,21 @@ $$
 
 #### 迭代优化
 1. 初始化：双矢量定姿
-2. 迭代次数：5次
+2. 迭代次数：>=5次
 3. 每次迭代后更新参数并重新处理
+
+**matlab实现见 sysclbtMEMS 函数。**
+
+### 1.8 转台模拟吊舱转动
+**参考文献**：翁浚,刘健宁,寇科,等.吊舱SINS/GNSS组合导航多杆臂效应在线估计算法[J].中国惯性技术学报,2021,29(02):184-190.DOI:10.13695/j.cnki.12-1222/o3.2021.02.007.
+使用转台模拟吊舱的转动，确认实时A25a的程序能否能跟踪到A25的航向变化。
+
+### 1.8.1 约束限制
+由于实时
+
+
+
+
 
 ## 2. GNSS定位基础与定位原理
 **本节内容主要参考并基于[RTKlib](https://www.rtklib.com/)开源GNSS算法库的框架构建（v2.4.3），重点说明关键模型实现细节。**
