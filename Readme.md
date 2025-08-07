@@ -908,11 +908,174 @@ $$
 M_{ak\mathrm{D}}=M_{av\mathrm{D}}M_{\nu k\mathrm{D}}
 $$
 
-### 3.3 视觉定位解算流程
-假设视觉
+### 3.3 EKF_SLAM
+## 4. EKF-SLAM 算法推导与误差分析
+### 4.1 状态空间定义
+#### 4.1.1 状态向量构成
+$$
+\boldsymbol{x}_k = \begin{bmatrix} 
+\boldsymbol{x}_{v,k} \\ 
+\boldsymbol{m}_1 \\ 
+\vdots \\ 
+\boldsymbol{m}_n 
+\end{bmatrix} \in \mathbb{R}^{3+2n}
+$$
+- **机器人位姿**：$\boldsymbol{x}_{v,k} = [x_k, y_k, \theta_k]^\top$ (2D 位置与航向)
+- **路标位置**：$\boldsymbol{m}_i = [m_{i,x}, m_{i,y}]^\top$ (第 i 个路标的世界坐标)
 
+#### 4.1.2 协方差矩阵结构
+$$
+\boldsymbol{P}_k = \begin{bmatrix}
+\boldsymbol{P}_{vv,k} & \boldsymbol{P}_{vm,k} \\ 
+\boldsymbol{P}_{vm,k}^\top & \boldsymbol{P}_{mm,k} 
+\end{bmatrix}
+$$
+- $\boldsymbol{P}_{vv,k}$：位姿协方差 (3×3)
+- $\boldsymbol{P}_{mm,k}$：路标位置协方差 (2n×2n)
+- $\boldsymbol{P}_{vm,k}$：位姿-路标互协方差 (3×2n)
 
-### 3.4 视觉定位误差分析
+### 4.2 运动模型（预测步骤）
+#### 4.2.1 非线性运动模型
+$$
+\boldsymbol{x}_{v,k} = f(\boldsymbol{x}_{v,k-1}, \boldsymbol{u}_k, \boldsymbol{w}_k) = 
+\begin{bmatrix}
+x_{k-1} + \Delta T v_k \cos(\theta_{k-1} + \gamma_k) \\
+y_{k-1} + \Delta T v_k \sin(\theta_{k-1} + \gamma_k) \\
+\theta_{k-1} + \Delta T \omega_k
+\end{bmatrix}
+$$
+- 控制输入：$\boldsymbol{u}_k = [v_k, \omega_k]^\top$ (线速度, 角速度)
+- 过程噪声：$\boldsymbol{w}_k \sim \mathcal{N}(0, \boldsymbol{Q}_k)$
+
+#### 4.2.2 雅可比矩阵计算
+$$
+\boldsymbol{F}_x = \frac{\partial f}{\partial \boldsymbol{x}_v} = 
+\begin{bmatrix}
+1 & 0 & -\Delta T v_k \sin(\theta_{k-1} + \gamma_k) \\
+0 & 1 & \Delta T v_k \cos(\theta_{k-1} + \gamma_k) \\
+0 & 0 & 1
+\end{bmatrix}
+$$
+$$
+\boldsymbol{F}_w = \frac{\partial f}{\partial \boldsymbol{w}_k} = 
+\begin{bmatrix}
+\Delta T \cos(\theta_{k-1} + \gamma_k) & 0 \\
+\Delta T \sin(\theta_{k-1} + \gamma_k) & 0 \\
+0 & \Delta T
+\end{bmatrix}
+$$
+
+#### 4.2.3 预测方程
+$$\begin{aligned}
+\hat{\boldsymbol{x}}_{k|k-1} &= \begin{bmatrix} f(\boldsymbol{x}_{v,k-1}, \boldsymbol{u}_k, 0) \\ \boldsymbol{m}_{k-1} \end{bmatrix} \\
+\boldsymbol{P}_{k|k-1} &= \boldsymbol{F} \boldsymbol{P}_{k-1} \boldsymbol{F}^\top + \boldsymbol{G} \boldsymbol{Q}_k \boldsymbol{G}^\top
+\end{aligned}$$
+其中：
+$$
+\boldsymbol{F} = \begin{bmatrix} \boldsymbol{F}_x & 0 \\ 0 & \boldsymbol{I}_{2n} \end{bmatrix}, \quad
+\boldsymbol{G} = \begin{bmatrix} \boldsymbol{F}_w \\ 0 \end{bmatrix}
+$$
+
+### 4.3 观测模型（更新步骤）
+#### 4.3.1 非线性观测模型
+$$
+\boldsymbol{z}_k^i = h(\boldsymbol{x}_v, \boldsymbol{m}_i) + \boldsymbol{v}_k^i = 
+\begin{bmatrix}
+\sqrt{(m_{i,x} - x)^2 + (m_{i,y} - y)^2} \\
+\atan2(m_{i,y} - y, m_{i,x} - x) - \theta
+\end{bmatrix}
+$$
+- 观测噪声：$\boldsymbol{v}_k^i \sim \mathcal{N}(0, \boldsymbol{R}_k)$
+
+#### 4.3.2 观测雅可比矩阵
+$$
+\boldsymbol{H}^i = \frac{\partial h}{\partial \boldsymbol{x}} = 
+\begin{bmatrix} 
+\boldsymbol{H}_v^i & 0 \cdots 0 & \boldsymbol{H}_m^i & 0 \cdots 0 
+\end{bmatrix}
+$$
+其中：
+$$
+\boldsymbol{H}_v^i = \begin{bmatrix}
+-\frac{\Delta x}{d} & -\frac{\Delta y}{d} & 0 \\
+\frac{\Delta y}{d^2} & -\frac{\Delta x}{d^2} & -1
+\end{bmatrix}, \quad
+\boldsymbol{H}_m^i = \begin{bmatrix}
+\frac{\Delta x}{d} & \frac{\Delta y}{d} \\
+-\frac{\Delta y}{d^2} & \frac{\Delta x}{d^2}
+\end{bmatrix}
+$$
+- $\Delta x = m_{i,x} - x$, $\Delta y = m_{i,y} - y$, $d = \sqrt{(\Delta x)^2 + (\Delta y)^2}$
+
+### 4.4 数据关联与更新
+#### 4.4.1 新路标初始化
+若观测到未关联路标：
+$$
+\boldsymbol{m}_\text{new} = \begin{bmatrix}
+x + d \cos(\theta + \phi) \\
+y + d \sin(\theta + \phi)
+\end{bmatrix}, \quad \boldsymbol{z} = [d, \phi]^\top
+$$
+协方差扩展：
+$$
+\boldsymbol{P}_\text{new} = \boldsymbol{J} \begin{bmatrix} \boldsymbol{P}_{vv} & 0 \\ 0 & \boldsymbol{R} \end{bmatrix} \boldsymbol{J}^\top, \quad
+\boldsymbol{J} = \begin{bmatrix} \frac{\partial \boldsymbol{m}_\text{new}}{\partial \boldsymbol{x}_v} & \frac{\partial \boldsymbol{m}_\text{new}}{\partial \boldsymbol{z}} \end{bmatrix}
+$$
+
+#### 4.4.2 卡尔曼更新
+$$\begin{aligned}
+\text{新息：} \quad \boldsymbol{\nu}_k^i &= \boldsymbol{z}_k^i - h(\hat{\boldsymbol{x}}_{k|k-1}) \\
+\text{协方差：} \quad \boldsymbol{S}_k^i &= \boldsymbol{H}^i \boldsymbol{P}_{k|k-1} (\boldsymbol{H}^i)^\top + \boldsymbol{R}_k \\
+\text{增益：} \quad \boldsymbol{K}_k^i &= \boldsymbol{P}_{k|k-1} (\boldsymbol{H}^i)^\top (\boldsymbol{S}_k^i)^{-1} \\
+\text{更新：} \quad \hat{\boldsymbol{x}}_{k|k} &= \hat{\boldsymbol{x}}_{k|k-1} + \boldsymbol{K}_k^i \boldsymbol{\nu}_k^i \\
+\boldsymbol{P}_{k|k} &= (\boldsymbol{I} - \boldsymbol{K}_k^i \boldsymbol{H}^i) \boldsymbol{P}_{k|k-1}
+\end{aligned}$$
+
+### 4.5 误差分析
+#### 4.5.1 线性化误差
+| **误差源**         | **数学描述**                          | **影响**               |
+|--------------------|--------------------------------------|------------------------|
+| **一阶近似残差**   | $\|f(\boldsymbol{x}) - f(\hat{\boldsymbol{x}}) - \boldsymbol{F}_x \delta\boldsymbol{x}\|$ | 模型失真导致发散       |
+| **泰勒展开截断**   | $\mathcal{O}(\|\delta\boldsymbol{x}\|^2)$ | 大初始误差时不稳定    |
+
+#### 4.5.2 数据关联误差
+**误关联概率模型**：
+$$ P(\text{错误关联}) = 1 - \int_{\mathcal{Z}} p(\boldsymbol{z} | \text{正确}) d\boldsymbol{z} $$
+其中 $\mathcal{Z} = \{ \boldsymbol{z} : \|\boldsymbol{z} - \hat{\boldsymbol{z}}_i\|_{\boldsymbol{S}^{-1}} < \tau \}$
+
+**误差传播**：
+- 单次误关联 → 位姿误差增长 $\|\delta\boldsymbol{x}\| \propto \|\boldsymbol{K}\| \cdot \|\boldsymbol{\nu}_\text{err}\|$
+- 连续误关联 → 协方差矩阵失去正定性
+
+#### 4.5.3 计算复杂度
+$$
+\mathcal{O}(n^3) \quad \text{(矩阵求逆)} \quad \xrightarrow{\text{稀疏性利用}} \mathcal{O}(n^{1.5})
+$$
+- **存储需求**：$\frac{1}{2}(3+2n)(4+2n)$ → 路标数$n$较大时不可行
+
+#### 4.5.4 一致性分析
+**NEES检验**：
+$$
+\epsilon_k = (\boldsymbol{x}_k - \hat{\boldsymbol{x}}_k)^\top \boldsymbol{P}_k^{-1} (\boldsymbol{x}_k - \hat{\boldsymbol{x}}_k) \sim \chi^2_{\dim(\boldsymbol{x})}
+$$
+若 $\mathbb{E}[\epsilon_k] > \dim(\boldsymbol{x})$ 则滤波器乐观
+
+### 4.6 性能提升技术
+#### 4.6.1 稀疏化处理
+**协方差矩阵近似**：
+$$
+\boldsymbol{P} \approx \begin{bmatrix}
+\boldsymbol{P}_{vv} & \boldsymbol{P}_{vm} \\
+\boldsymbol{P}_{vm}^\top & \text{blkdiag}(\boldsymbol{P}_{m_im_i})
+\end{bmatrix}
+$$
+- 忽略路标间相关性 → 计算降至$\mathcal{O}(n)$
+
+#### 4.6.2 分治策略
+**局部子图构建**：
+1. 创建短期局部子图：$\boldsymbol{x}^\text{local} = [\boldsymbol{x}_v, \boldsymbol{m}_{\text{active}}]^\top$
+2. 子图内EKF-SLAM
+3. 子图合并：$\boldsymbol{x}_\text{global} = g(\boldsymbol{x}_\text{global}, \boldsymbol{x}_\text{local})$
 
 
 
