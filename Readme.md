@@ -1078,7 +1078,8 @@ $$
 3. 子图合并：$\boldsymbol{x}_\text{global} = g(\boldsymbol{x}_\text{global}, \boldsymbol{x}_\text{local})$
 
 
-
+## 5. msckf_vio 基于EKF的视觉融合
+**参考文献** Robust Stereo Visual Inertial Odometry for Fast Autonomous Flight
 
 
 ## 4.  融合技术
