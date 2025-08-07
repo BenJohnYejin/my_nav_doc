@@ -234,7 +234,8 @@ $$
 
 那么姿态误差方程为，
 $$
-\begin{aligned}\mathrm{\dot{\phi}}
+\begin{aligned}
+\mathrm{\dot{\phi}}
 &=\phi\times\omega_{in}^{n}+\delta\omega_{in}^{n}-\delta\omega_{ib}^{n}\\&=\phi\times\omega_{in}^{n}+(\delta\omega_{ie}^{n}+\delta\omega_{en}^{n})-C_{b}^{n}\delta\omega_{ib}^{b}\\
 &=\boldsymbol{\phi}\times\boldsymbol{\omega}_{in}^{n}+(\boldsymbol{M}_{1}\delta\boldsymbol{p}+\boldsymbol{M}_{an}\delta\boldsymbol{v}^{n}+\boldsymbol{M}_{2}\delta\boldsymbol{p})-\boldsymbol{C}_{b}^{n}(\omega_{ibx}^{b}\delta\boldsymbol{K}_{\mathbf{G}x}+\omega_{iby}^{b}\delta\boldsymbol{K}_{\mathbf{G}y}+\omega_{ibz}^{b}\delta\boldsymbol{K}_{\mathbf{G}z}+\boldsymbol{\varepsilon}^{b})\\
 &=-\omega_{in}^{n}\times\boldsymbol{\phi}+\boldsymbol{M}_{an}\delta\boldsymbol{\nu}^{n}+(\boldsymbol{M}_{1}+\boldsymbol{M}_{2})\delta\boldsymbol{p}-\omega_{ibx}^{b}\boldsymbol{C}_{b}^{n}\delta\boldsymbol{K}_{\mathbf{G}x}-\omega_{iby}^{b}\boldsymbol{C}_{b}^{n}\delta\boldsymbol{K}_{\mathbf{G}y}-\omega_{ibz}^{b}\boldsymbol{C}_{b}^{n}\delta\boldsymbol{K}_{\mathbf{G}z}-\boldsymbol{C}_{iby}\\
@@ -242,11 +243,16 @@ $$
 $$
 速度误差方程为，
 $$
-\begin{gathered}\delta\dot{\nu}^{n}=\boldsymbol{f}_{\mathrm{sf}}^{n}\times\boldsymbol{\phi}+\left[(\boldsymbol{\nu}^{n}\times)\boldsymbol{M}_{cn}-(2\boldsymbol{\omega}_{i\boldsymbol{e}}^{n}+\boldsymbol{\omega}_{en}^{n})\times\right]\mathbf{\delta}\boldsymbol{\nu}^{n}+\left[(\boldsymbol{\nu}^{n}\times)(2\boldsymbol{M}_{1}+\boldsymbol{M}_{2})+\boldsymbol{M}_{3}\right]\mathbf{\delta}\boldsymbol{p}\\+C_{b}^{n}(f_{sfx}^{b}\delta K_{Ax}+f_{sfy}^{b}\delta K_{Ay}+f_{sfz}^{b}\delta K_{Az}+\nabla^{b})\end{gathered}
+\begin{gathered}
+\delta\dot{\nu}^{n}=\boldsymbol{f}_{\mathrm{sf}}^{n}\times\boldsymbol{\phi}+\left[(\boldsymbol{\nu}^{n}\times)\boldsymbol{M}_{cn}-(2\boldsymbol{\omega}_{i\boldsymbol{e}}^{n}+\boldsymbol{\omega}_{en}^{n})\times\right]\mathbf{\delta}\boldsymbol{\nu}^{n}+\left[(\boldsymbol{\nu}^{n}\times)(2\boldsymbol{M}_{1}+\boldsymbol{M}_{2})+\boldsymbol{M}_{3}\right]\mathbf{\delta}\boldsymbol{p}\\+C_{b}^{n}(f_{sfx}^{b}\delta K_{Ax}+f_{sfy}^{b}\delta K_{Ay}+f_{sfz}^{b}\delta K_{Az}+\nabla^{b})
+\end{gathered}
 $$
 其中
 $$
-\begin{aligned}&M_{_{va}}=(f_{\mathrm{sf}}^{n}\times)\\&\boldsymbol{M}_{_{w}}=(v^{n}\times)M_{av}-\left[(2\omega_{ie}^{n}+\omega_{en}^{n})\times\right]\\&\boldsymbol{M}_{\nu p}=(v^{n}\times)(2M_{1}+M_{2})+M_{3}\end{aligned}
+\begin{aligned}
+&M_{_{va}}=(f_{\mathrm{sf}}^{n}\times)\\&\boldsymbol{M}_{_{w}}=(v^{n}\times)M_{av}-\left[(2\omega_{ie}^{n}+\omega_{en}^{n})\times\right]\\
+&\boldsymbol{M}_{\nu p}=(v^{n}\times)(2M_{1}+M_{2})+M_{3}
+\end{aligned}
 $$
 
 位置误差为
@@ -471,16 +477,11 @@ $$
 
 **matlab实现见 sysclbtMEMS 函数。**
 
-### 1.8 转台模拟吊舱转动
+### 1.8 吊舱转动导致的算法计算异常
 **参考文献**：翁浚,刘健宁,寇科,等.吊舱SINS/GNSS组合导航多杆臂效应在线估计算法[J].中国惯性技术学报,2021,29(02):184-190.DOI:10.13695/j.cnki.12-1222/o3.2021.02.007.
-使用转台模拟吊舱的转动，确认实时A25a的程序能否能跟踪到A25的航向变化。
 
-### 1.8.1 约束限制
-由于实时
-
-
-
-
+### 1.9 长直线工况下航向漂移
+**参考文献**： 传递对准
 
 ## 2. GNSS定位基础与定位原理
 **本节内容主要参考并基于[RTKlib](https://www.rtklib.com/)开源GNSS算法库的框架构建（v2.4.3），重点说明关键模型实现细节。**
@@ -685,7 +686,13 @@ RTKlib输出：`sol_t.dop`数组存储DOP值
 #### 2.5.2 实时动态定位(RTK)流程
 
 
-## 3.  里程计递推相关
+## 3.  里程计与视觉相关
+本节内容参考 **PINS**、**视觉SLAM十四讲**以及**VINS** \
+个人理解在不引入回环检测、地标点以及地图的情况下，视觉的信息仅能缩减到与里程计类似的相对测量量。
+
+
+
+
 
 
 
