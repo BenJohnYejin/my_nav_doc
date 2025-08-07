@@ -686,11 +686,233 @@ RTKlib输出：`sol_t.dop`数组存储DOP值
 #### 2.5.2 实时动态定位(RTK)流程
 
 
-## 3.  里程计与视觉相关
-本节内容参考 **PINS**、**视觉SLAM十四讲**以及**VINS** \
-个人理解在不引入回环检测、地标点以及地图的情况下，视觉的信息仅能缩减到与里程计类似的相对测量量。
+## 3. 里程计与视觉定位部分
+**参考来源**：PINS、视觉SLAM十四讲、VINS  
+**核心观点**：在不引入回环检测、地标点及地图的情况下，视觉信息可简化为类似里程计的相对测量量。本节重点讨论使用速度或相对位移进行位置递推的方法。
+
+### 3.1 里程计定位解算
+#### 3.1.1 坐标系定义与基本假设
+1. **坐标系定义**：
+   - 里程仪测量坐标系（m系）：右手直角坐标系
+     - Y轴：地平面内，指向车体正前方
+     - Z轴：垂直于地平面向上
+     - X轴：指向右方（"右-前-上"构型）
+   - 导航坐标系（n系）：东北天（ENU）地理坐标系
+
+2. **基本假设**：
+   - 车轮紧贴路面，无打滑、滑行和弹跳
+   - IMU坐标系（b系）与m系重合
+   - 载体视为质点，里程计测量前向速度
+
+#### 3.1.2 速度模型与坐标转换
+里程仪速度输出模型：
+$$
+\boldsymbol{v}_{\mathrm{D}}^{m} = \begin{bmatrix} 0 \\ v_{\mathrm{D}} \\ 0 \end{bmatrix}
+$$
+其中$v_{\mathrm{D}}$为前向速度大小（前进正，倒车负）。
+
+通过姿态矩阵$C_b^n$转换至导航系：
+$$
+\boldsymbol{v}_\mathrm{D}^n = C_b^n \boldsymbol{v}_\mathrm{D}^m
+$$
+
+#### 3.1.3 位置更新算法
+位置微分方程：
+$$
+\dot{\boldsymbol{p}}_{\mathrm{D}} = \boldsymbol{M}_{p\nu\mathrm{D}} \boldsymbol{v}_{\mathrm{D}}^{n}
+$$
+其中：
+- 位置向量：$\boldsymbol{p}_{\mathrm{D}} = \begin{bmatrix} L_{\mathrm{D}} \\ \lambda_{\mathrm{D}} \\ h_{\mathrm{D}} \end{bmatrix}$
+- 转换矩阵：
+  $$
+  \boldsymbol{M}_{p\nu\mathbf{D}} = \begin{bmatrix} 
+  0 & 1/R_{Mh\mathbf{D}} & 0 \\ 
+  \sec L_{\mathbf{D}}/R_{Nh\mathbf{D}} & 0 & 0 \\ 
+  0 & 0 & 1 
+  \end{bmatrix}
+  $$
+- 曲率半径计算：
+  $R_{MhD} = R_{MD} + h_{D}$（子午圈）
+  $R_{NhD} = R_{ND} + h_{D}$（卯酉圈）
+
+离散化位置更新：
+$$
+\begin{aligned}
+L_{\mathrm{D}(j)} &= L_{\mathrm{D}(j-1)} + \frac{\Delta S_{\mathrm{N}(j)}}{R_{Mh\mathrm{D}(j-1)}} \\
+\lambda_{\mathrm{D}(j)} &= \lambda_{\mathrm{D}(j-1)} + \frac{\Delta S_{\mathrm{E}(j)}\sec L_{\mathrm{D}(j-1)}}{R_{Nh\mathrm{D}(j-1)}} \\
+h_{\mathrm{D}(j)} &= h_{\mathrm{D}(j-1)} + \Delta S_{\mathrm{U}(j)}
+\end{aligned}
+$$
+其中$\Delta\boldsymbol{S}_{j}^{n} = \begin{bmatrix} \Delta S_{\mathrm{E}(j)} & \Delta S_{\mathrm{N}(j)} & \Delta S_{\mathrm{U}(j)} \end{bmatrix}^{T}$为位移增量。
+
+#### 3.1.4 姿态更新算法
+姿态矩阵微分方程：
+$$
+\dot{C}_{b}^{n} = C_{b}^{n}(\boldsymbol{\omega}_{ib}^{b}\times) - (\boldsymbol{\omega}_{in}^{n}\times)C_{b}^{n}
+$$
+其中：
+$$
+\boldsymbol{\omega}_{in}^n = \boldsymbol{\omega}_{ie}^n + \boldsymbol{\omega}_{en}^n
+$$
+$$
+\boldsymbol{\omega}_{ie}^n = \begin{bmatrix} 0 \\ \omega_{ie}\cos L_{\mathrm{D}} \\ \omega_{ie}\sin L_{\mathrm{D}} \end{bmatrix}
+$$
+$$
+\boldsymbol{\omega}_{en}^{n} = \begin{bmatrix} 
+-\frac{\nu_{\mathrm{DN}}}{R_{Mh\mathrm{D}}} \\ 
+\frac{\nu_{\mathrm{DE}}}{R_{Nh\mathrm{D}}} \\ 
+\frac{\nu_{\mathrm{DE}}\tan L_{\mathrm{D}}}{R_{Nh\mathrm{D}}} 
+\end{bmatrix}
+$$
+
+离散化姿态更新：
+$$
+C_{b(j)}^{n} = C_{n(j-1)}^{n(j)} C_{b(j-1)}^{n} C_{b(j)}^{b(j-1)}
+$$
+旋转矢量计算：
+$$
+\boldsymbol{\phi}_{in(j)}^n = T_j \begin{bmatrix} 0 \\ \omega_{ie}\cos L_{\mathrm{D}(j)} \\ \omega_{ie}\sin L_{\mathrm{D}(j)} \end{bmatrix} + \begin{bmatrix} 
+-\Delta S_{\mathrm{DN}(j)}/R_{M\mathrm{D}(j)} \\ 
+\Delta S_{\mathrm{DE}(j)}/R_{M\mathrm{D}(j)} \\ 
+\Delta S_{\mathrm{DE}(j)}\tan L_{\mathrm{D}(j)}/R_{N\mathrm{D}(j)} 
+\end{bmatrix}
+$$
+
+### 3.2 里程计误差分析
+#### 3.2.1 安装偏差模型
+m系到b系的变换矩阵：
+$$
+C_b^m = I + (\boldsymbol{\alpha}\times) = \begin{bmatrix}
+1 & -\alpha_\psi & \alpha_\gamma \\ 
+\alpha_\psi & 1 & -\alpha_\theta \\ 
+-\alpha_\gamma & \alpha_\theta & 1 
+\end{bmatrix}
+$$
+其中$\boldsymbol{\alpha} = \begin{bmatrix} \alpha_\theta & \alpha_\gamma & \alpha_\psi \end{bmatrix}^{\mathrm{T}}$为安装偏角。
+
+#### 3.2.2 刻度系数误差
+实际速度输出：
+$$
+\tilde{v}_{\mathrm{D}} = (1 + \delta K_{\mathrm{D}}) \nu_{\mathrm{D}}
+$$
+
+#### 3.2.3 导航系速度误差推导
+实际速度在导航系投影：
+$$
+\begin{aligned}
+\tilde{\boldsymbol{v}}_{\mathrm{D}}^{n} &= \tilde{\boldsymbol{C}}_{b}^{n}(\boldsymbol{C}_{b}^{m})^{\mathrm{T}}\tilde{\boldsymbol{v}}_{\mathrm{D}}^{m} \\
+&= (\boldsymbol{I}-\boldsymbol{\phi}_{D}\times)\boldsymbol{C}_{b}^{n}(\boldsymbol{I}-\boldsymbol{\alpha}\times)(1+\delta K_{\mathrm{D}})\boldsymbol{v}_{\mathrm{D}}^{m} \\
+&\approx \boldsymbol{v}_{\mathrm{D}}^{n} - (\boldsymbol{\phi}_{\mathrm{D}}\times)\boldsymbol{C}_{b}^{n}\boldsymbol{v}_{\mathrm{D}}^{m} - \boldsymbol{C}_{b}^{n}(\boldsymbol{\alpha}\times)\boldsymbol{v}_{\mathrm{D}}^{m} + \boldsymbol{C}_{b}^{n}\delta K_{\mathrm{D}}\boldsymbol{v}_{\mathrm{D}}^{m} \\
+&= \boldsymbol{v}_{\mathrm{D}}^{n} + \boldsymbol{v}_{\mathrm{D}}^{n}\times\boldsymbol{\phi}_{\mathrm{D}} + \boldsymbol{C}_{b}^{n}(\boldsymbol{v}_{\mathrm{D}}^{m}\times)\boldsymbol{\alpha} + \boldsymbol{C}_{b}^{n}\boldsymbol{v}_{\mathrm{D}}^{m}\delta K_{\mathrm{D}}
+\end{aligned}
+$$
+
+展开矩阵形式：
+$$
+\begin{aligned}
+\tilde{\boldsymbol{v}}_{\mathrm{D}}^{n} &= \boldsymbol{v}_{\mathrm{D}}^{n} + \boldsymbol{v}_{\mathrm{D}}^{n}\times\boldsymbol{\phi}_{\mathrm{D}} + 
+\begin{bmatrix}
+C_{11} & C_{12} & C_{13} \\
+C_{21} & C_{22} & C_{23} \\
+C_{31} & C_{32} & C_{33}
+\end{bmatrix}
+\begin{bmatrix}
+0 & 0 & v_{\mathrm{D}} \\
+0 & 0 & 0 \\
+-v_{\mathrm{D}} & 0 & 0
+\end{bmatrix}
+\boldsymbol{\alpha} \\
+&+ \begin{bmatrix}
+C_{11} & C_{12} & C_{13} \\
+C_{21} & C_{22} & C_{23} \\
+C_{31} & C_{32} & C_{33}
+\end{bmatrix}
+\begin{bmatrix}
+0 \\ v_{\mathrm{D}} \\ 0
+\end{bmatrix}
+\delta K_{\mathrm{D}} \\
+&= \boldsymbol{v}_{\mathrm{D}}^{n} + \boldsymbol{v}_{\mathrm{D}}^{n}\times\boldsymbol{\phi}_{\mathrm{D}} + v_{\mathrm{D}}
+\begin{bmatrix}
+-C_{13} & 0 & C_{11} \\
+-C_{23} & 0 & C_{21} \\
+-C_{33} & 0 & C_{31}
+\end{bmatrix}
+\boldsymbol{\alpha} + v_{\mathrm{D}}
+\begin{bmatrix}
+C_{12} \\ C_{22} \\ C_{32}
+\end{bmatrix}
+\delta K_{\mathrm{D}}
+\end{aligned}
+$$
+
+简化形式（忽略滚动角）：
+$$
+\tilde{\boldsymbol{v}}_{\mathrm{D}}^{n} = \boldsymbol{v}_{\mathrm{D}}^{n} + \boldsymbol{v}_{\mathrm{D}}^{n}\times\boldsymbol{\phi}_{\mathrm{D}} + \boldsymbol{M}_{\nu\mathrm{iD}} \boldsymbol{\kappa}_{\mathrm{D}}
+$$
+其中：
+$$
+\boldsymbol{M}_{\nu\boldsymbol{i}\mathbf{D}} = \nu_{\mathbf{D}} \begin{bmatrix} 
+-C_{13} & C_{12} & C_{11} \\ 
+-C_{23} & C_{22} & C_{21} \\ 
+-C_{33} & C_{32} & C_{31} 
+\end{bmatrix}, \quad
+\boldsymbol{\kappa}_\mathrm{D} = \begin{bmatrix} \alpha_\theta \\ \delta K_\mathrm{D} \\ \alpha_\psi \end{bmatrix}
+$$
+
+#### 3.2.4 位置误差方程
+位置误差微分方程：
+$$
+\delta\dot{\boldsymbol{p}}_{\mathrm{D}} = \boldsymbol{M}_{p\nu\mathrm{D}} \delta\boldsymbol{v}_{\mathrm{D}}^{n} + \boldsymbol{M}_{pp\mathrm{D}} \delta\boldsymbol{p}_{\mathrm{D}}
+$$
+其中：
+$$
+\boldsymbol{M}_{p\nu\mathrm{D}}=\begin{bmatrix}0&1/R_{Mi\mathrm{D}}&0\\\sec L_\mathrm{D}/R_{Nh\mathrm{D}}&0&0\\0&0&1\end{bmatrix}  \\
+\boldsymbol{M}_{pp\mathrm{D}} = \begin{bmatrix} 
+0 & 0 & -\nu_{\mathrm{DN}}/R_{M\mathrm{D}}^2 \\ 
+\nu_\mathrm{DE}\sec L_\mathrm{D}\tan L_\mathrm{D}/R_{Nh\mathrm{D}} & 0 & -\nu_\mathrm{DE}\sec L/R_{Nh\mathrm{D}}^2 \\ 
+0 & 0 & 0 
+\end{bmatrix}
+$$
+
+代入速度误差：
+$$
+\delta\dot{\boldsymbol{p}}_{\mathrm{D}} = \boldsymbol{M}_{p\nu\mathrm{D}} (\boldsymbol{v}_{\mathrm{D}}^{n}\times\boldsymbol{\phi}_{\mathrm{D}} + \boldsymbol{M}_{p\nu\mathrm{D}} \boldsymbol{M}_{\nu\mathrm{iD}} \boldsymbol{\kappa}_{\mathrm{D}} + \boldsymbol{M}_{pp\mathrm{D}} \delta\boldsymbol{p}_{\mathrm{D}}
+$$
+
+#### 3.2.5 姿态误差方程
+姿态误差微分方程：
+$$
+\dot{\boldsymbol{\phi}}_{\mathrm{D}} = \boldsymbol{M}_{aa\mathrm{D}}^{\prime} \boldsymbol{\phi}_\mathrm{D} + \boldsymbol{M}_{a\nu\mathrm{D}} \delta\boldsymbol{v}_\mathrm{D}^{n} + \boldsymbol{M}_{ap\mathrm{D}} \delta\boldsymbol{p}_\mathrm{D} - \boldsymbol{C}_b^n \boldsymbol{\varepsilon}^b
+$$
+其中：
+$$
+
+\boldsymbol{M}_{aa\mathrm{D}}^{\prime} = -\left( \begin{bmatrix} 0 \\ \omega_{ie}\cos L_{\mathrm{D}} \\ \omega_{ie}\sin L_{\mathrm{D}} \end{bmatrix} + \begin{bmatrix} -\nu_{\mathrm{DN}}/R_{Mi\mathrm{D}} \\ \nu_{\mathrm{DE}}/R_{Ni\mathrm{D}} \\ \nu_{\mathrm{DE}}\tan L_{\mathrm{D}}/R_{Ni\mathrm{D}} \end{bmatrix} \right) \times
+$$
+
+代入速度、位置误差：
+$$
+\begin{aligned}
+\dot{\boldsymbol{\phi}}_{\mathrm{D}} &= \boldsymbol{M}_{\mathrm{aaD}}^{\prime}\boldsymbol{\phi}_{\mathrm{D}} + \boldsymbol{M}_{\mathrm{anD}}(\boldsymbol{\nu}_{\mathrm{D}}^{n}\times\boldsymbol{\phi}_{\mathrm{D}} + \boldsymbol{M}_{\mathrm{anD}} \boldsymbol{M}_{\mathrm{\nu ibD}} \boldsymbol{\kappa}_{\mathrm{D}} + \boldsymbol{M}_{\mathrm{apD}} \delta\boldsymbol{p}_{\mathrm{D}} - \boldsymbol{C}_{b}^{n} \boldsymbol{\varepsilon}^{b} \\
+&= \left[\boldsymbol{M}_{aa\mathrm{D}}^{\prime} + \boldsymbol{M}_{an\mathrm{D}} (\boldsymbol{v}_{\mathrm{D}}^{n} \times) \right] \boldsymbol{\phi}_{\mathrm{D}} + \boldsymbol{M}_{an\mathrm{D}} \boldsymbol{M}_{\nu i\mathrm{D}} \boldsymbol{\kappa}_{\mathrm{D}} + \boldsymbol{M}_{ap\mathrm{D}} \delta\boldsymbol{p}_{\mathrm{D}} - \boldsymbol{C}_{b}^{n} \boldsymbol{\varepsilon}^{b}
+\end{aligned}
+$$
+
+最终形式：
+$$
+\dot{\boldsymbol{\phi}}_{\mathrm{D}} = \boldsymbol{M}_{aa\mathrm{D}} \boldsymbol{\phi}_\mathrm{D} + \boldsymbol{M}_{ak\mathrm{D}} \boldsymbol{\kappa}_\mathrm{D} + \boldsymbol{M}_{ap\mathrm{D}} \delta\boldsymbol{p}_\mathrm{D} - \boldsymbol{C}_b^n \boldsymbol{\varepsilon}^b
+$$
+其中：
+$$
+\boldsymbol{M}_{aa\mathrm{D}} = \boldsymbol{M}_{aa\mathrm{D}}^{\prime} + \boldsymbol{M}_{a\nu\mathrm{D}} (\boldsymbol{v}_{\mathrm{D}}^{n} \times) \\
+M_{ak\mathrm{D}}=M_{av\mathrm{D}}M_{\nu k\mathrm{D}}
+$$
+
+### 3.3 视觉定位解算流程
+假设视觉
 
 
+### 3.4 视觉定位误差分析
 
 
 
