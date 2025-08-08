@@ -1130,6 +1130,7 @@ $$
 但还是想使用自己实现的矩阵运算库，其一是内存好控制，其二是方便单元测试，其三是熟悉旋转的数学运算。
 看实际工程怎么实现吧。
 
+#### 4.3.2 问题描述
 问题描述，载体的姿态为$T$，观察到世界坐标为$p$的特征点，产生了观测数据为$z$，那么由
 $$ z=T\boldsymbol{p}+\boldsymbol{w} $$
 则观测方程可以被写为，
@@ -1138,7 +1139,7 @@ $$ e=\boldsymbol{z}-\boldsymbol{Tp} $$
 $$
 \min_{\boldsymbol{T}}J(\boldsymbol{T})=\sum_{i=1}^{N}\|\boldsymbol{z}_{i}-\boldsymbol{T}\boldsymbol{p}_{i}\|_{2}^{2}
 $$
-对$R$进行一次扰动$\Delta R$，查看结果相对于扰动的变化率，假设扰动的李代数为$\mathrm{d}$。则，
+对$R$进行一次扰动$\Delta R$，查看结果相对于扰动的变化率，假设扰动的李代数为$\boldsymbol\varphi$。则，
 $$
 \frac{\partial\left(\boldsymbol{R}\boldsymbol{p}\right)}{\partial\boldsymbol{\varphi}}=\lim_{\boldsymbol{\varphi}\to\boldsymbol{0}}\frac{\exp\left(\boldsymbol{\varphi}^{\wedge}\right)\exp\left(\boldsymbol{\phi}^{\wedge}\right)\boldsymbol{p}-\exp\left(\boldsymbol{\phi}^{\wedge}\right)\boldsymbol{p}}{\boldsymbol{\varphi}} \\
 \begin{aligned}\frac{\partial\left(Rp\right)}{\partial\varphi}&=\lim_{\varphi\to0}\frac{\exp\left(\varphi^{\wedge}\right)\exp\left(\phi^{\wedge}\right)p-\exp\left(\phi^{\wedge}\right)p}{\varphi}\\&=\lim_{\varphi\to0}\frac{\left(\boldsymbol{I}+\boldsymbol{\varphi}^\wedge\right)\exp\left(\boldsymbol{\phi}^\wedge\right)\boldsymbol{p}-\exp\left(\boldsymbol{\phi}^\wedge\right)\boldsymbol{p}}{\varphi}\\&=\lim_{\varphi\to0}\frac{\varphi^{\wedge}Rp}{\varphi}=\lim_{\varphi\to0}\frac{-(Rp)^{\wedge}\varphi}{\varphi}=-(Rp)^{\wedge}\end{aligned}
@@ -1148,7 +1149,7 @@ $$
 \frac{\partial\left(\boldsymbol{T}\boldsymbol{p}\right)}{\partial\delta\boldsymbol{\xi}}=\lim_{\delta\boldsymbol{\xi}\to\boldsymbol{0}}\frac{\exp\left(\delta\boldsymbol{\xi}^\wedge\right)\exp\left(\boldsymbol{\xi}^\wedge\right)\boldsymbol{p}-\exp\left(\boldsymbol{\xi}^\wedge\right)\boldsymbol{p}}{\delta\boldsymbol{\xi}} \\
 \begin{aligned}&=\lim_{\delta\boldsymbol{\xi}\to\mathbf{0}}\frac{\left(\boldsymbol{I}+\delta\boldsymbol{\xi}^{\wedge}\right)\exp\left(\boldsymbol{\xi}^{\wedge}\right)\boldsymbol{p}-\exp\left(\boldsymbol{\xi}^{\wedge}\right)\boldsymbol{p}}{\delta\boldsymbol{\xi}}\\&=\lim_{\delta\boldsymbol{\xi}\to\mathbf{0}}\frac{\delta\boldsymbol{\xi}^{\wedge}\exp\left(\boldsymbol{\xi}^{\wedge}\right)\boldsymbol{p}}{\delta\boldsymbol{\xi}}\\&=\lim_{\delta\boldsymbol{\xi}\to\mathbf{0}}\frac{\begin{bmatrix}\delta\boldsymbol{\phi}^\wedge&\delta\boldsymbol{\rho}\\\mathbf{0}^\mathrm{T}&0\end{bmatrix}\begin{bmatrix}\boldsymbol{R}\boldsymbol{p}+\boldsymbol{t}\\\\1\end{bmatrix}}{\delta\boldsymbol{\xi}}\\&=\lim_{\delta\boldsymbol{\xi}\to\mathbf{0}}\frac{\begin{bmatrix}\delta\phi^\wedge\left(\boldsymbol{Rp}+\boldsymbol{t}\right)+\delta\boldsymbol{\rho}\\\\\mathbf{0}^\mathrm{T}\end{bmatrix}}{[\delta\boldsymbol{\rho},\delta\boldsymbol{\phi}]^\mathrm{T}}=\begin{bmatrix}\boldsymbol{I}&-\left(\boldsymbol{Rp}+\boldsymbol{t}\right)^\wedge\\\\\mathbf{0}^\mathrm{T}&\mathbf{0}^\mathrm{T}\end{bmatrix}\overset{\mathrm{def}}{\operatorname*{=}}\boldsymbol{Tp}\end{aligned}
 $$
-************************************************
+#### 4.3.3 对旋转矩阵进行数学优化，使其满足某种数学运算，该数学运算有利于进行数值优化
 通过对旋转矩阵进行微分，得到旋转矩阵可以由旋转角度的反对称阵计算得到。
 $$
 \boldsymbol{R}(t)=\exp{(\boldsymbol{\phi}_0^{\wedge}t)}
@@ -1160,12 +1161,11 @@ $$
 $$
 \xi^{\wedge}=\begin{bmatrix}\phi^{\wedge}&\rho\\0^{\mathrm{T}}&0\end{bmatrix}\in\mathbb{R}^{4\times4}
 $$
-
 将以上两式展开，
- $$
+$$
 \exp\left(\phi^{\wedge}\right)=\exp\left(\theta\boldsymbol{a}^{\wedge}\right)=\sum_{n=0}^{\infty}\frac{1}{n!}\left(\theta\boldsymbol{a}^{\wedge}\right)^n  \\
 = \begin{aligned}&=\boldsymbol{I}+\theta\boldsymbol{a}^{\wedge}+\frac{1}{2!}\theta^{2}\boldsymbol{a}^{\wedge}\boldsymbol{a}^{\wedge}+\frac{1}{3!}\theta^{3}\boldsymbol{a}^{\wedge}\boldsymbol{a}^{\wedge}\boldsymbol{a}^{\wedge}+\frac{1}{4!}\theta^{4}(\boldsymbol{a}^{\wedge})^{4}+\cdots\\&=\boldsymbol{a}\boldsymbol{a}^\mathrm{T}-\boldsymbol{a}^\mathrm{\wedge}\boldsymbol{a}^\mathrm{\wedge}+\theta\boldsymbol{a}^\mathrm{\wedge}+\frac{1}{2!}\theta^2\boldsymbol{a}^\mathrm{\wedge}\boldsymbol{a}^\mathrm{\wedge}-\frac{1}{3!}\theta^3\boldsymbol{a}^\mathrm{\wedge}-\frac{1}{4!}\theta^4{(\boldsymbol{a}^\mathrm{\wedge})}^2+\cdots\\&=\boldsymbol{aa}^{\mathrm{T}}+\underbrace{\left(\theta-\frac{1}{3!}\theta^{3}+\frac{1}{5!}\theta^{5}-\cdots\right)}_{\sin\theta}\boldsymbol{a}^{\wedge}-\underbrace{\left(1-\frac{1}{2!}\theta^{2}+\frac{1}{4!}\theta^{4}-\cdots\right)}_{\cos\theta}\boldsymbol{a}^{\wedge}\boldsymbol{a}^{\wedge}\\&=a^\wedge a^\wedge+I+\sin\theta\boldsymbol{a}^\wedge-\cos\theta\boldsymbol{a}^\wedge\boldsymbol{a}^\wedge\\&=(1-\cos\theta)\boldsymbol{a}^\wedge\boldsymbol{a}^\wedge+\boldsymbol{I}+\sin\theta\boldsymbol{a}^\wedge\\&=\cos\theta\boldsymbol{I}+(1-\cos\theta)\boldsymbol{aa}^\mathrm{T}+\sin\theta\boldsymbol{a}^\mathrm{\wedge}.\end{aligned}
- $$
+$$
 即
 $$
 \phi=\ln\left(\boldsymbol{R}\right)^\vee=\left(\sum_{n=0}^\infty\frac{\left(-1\right)^n}{n+1}\left(\boldsymbol{R}-\boldsymbol{I}\right)^{n+1}\right)^\vee
@@ -1182,16 +1182,94 @@ $$
 \exp\left(\Delta\phi^{\wedge}\right)\exp\left(\phi^{\wedge}\right)=\exp\left(\left(\phi+J_{l}^{-1}\left(\phi\right)\Delta\phi\right)^{\wedge}\right) \\
 \exp\left(\Delta\boldsymbol{\xi}^{\wedge}\right)\exp\left(\boldsymbol{\xi}^{\wedge}\right)\approx\exp\left(\left(\boldsymbol{J}_{l}^{-1}\Delta\boldsymbol{\xi}+\boldsymbol{\xi}\right)^{\wedge}\right),\exp\left(\boldsymbol{\xi}^{\wedge}\right)\exp\left(\Delta\boldsymbol{\xi}^{\wedge}\right)\approx\exp\left(\left(\boldsymbol{J}_{r}^{-1}\Delta\boldsymbol{\xi}+\boldsymbol{\xi}\right)^{\wedge}\right)
 $$
-#### 4.3.2 视觉数据如何处理
-坐标系定义
 
+#### 4.3.4 相机模型建立
+##### 4.3.4.1 单目模型的成像过程以及数学模型的建立
+假设世界坐标系有一个固定点P，世界坐标为$P_w$。 \
+由于相机在运动，该运动可由旋转矩阵$R$和位移向量$t$描述。则世界坐标在相机为原点的坐标系下是$\hat P_c = RP_w + t$。 \
+将其投影在归一化平面$Z = 1$，得到归一化坐标，$P_c = X/Z,Y/Z,1$\
+有畸变的时候，根据畸变参数计算发生畸变后的坐标。 \
+最后得到像素坐标，乘以内参，$P_{uv} = KP_c$
 
+##### 4.3.4.2 双目模型的成像过程以及数学模型的建立
+考虑一个空间点P，在左眼成像$P_L$，右眼成像$P_R$，由于基线存在，成像位置是不同的。 \
+假设左右相机只在x轴上有位移，也就是u轴上有差异。左侧坐标为$u_L$，右侧坐标为$u_R$。 \
+则有
+$$
+\frac{z-f}{z}=\frac{b-u_L+u_R}{b}
+$$
+进一步，有
+$$
+z=\frac{fb}{d},\quad d\triangleq u_{L}-u_{R}
+$$
 
+#### 4.3.5 非线性优化问题模型的建立
+考虑到运动方程以及观测方程，
+$$
+\left.\left\{\begin{array}{l}\boldsymbol{x}_k=f\left(\boldsymbol{x}_{k-1},\boldsymbol{u}_k\right)+\boldsymbol{w}_k\\\boldsymbol{z}_{k,j}=h\left(\boldsymbol{y}_j,\boldsymbol{x}_k\right)+\boldsymbol{v}_{k,j}\end{array}\right.\right.
+$$
+假设在$\boldsymbol{x}_k$出在路标$\boldsymbol{y}_j$进行了一次观测，对应像素位置$boldsymbol{z}_{k,j}$，那么
+$$
+s\boldsymbol{z}_{k,j}=K(\boldsymbol{R}_k\boldsymbol{y}_j+t_k)
+$$
+并假设噪声为白噪声，则，
+$$
+w_k\sim\mathcal{N}\left(\mathbf{0},R_k\right),\boldsymbol{v}_k\sim\mathcal{N}\left(\mathbf{0},\boldsymbol{Q}_{k,j}\right)
+$$
+我们希望通过$z$和$u$推断位姿$x$和地图$y$，构成了状态估计问题。
 
-
-
-
-
+#### 4.3.6 非线性优化引出
+在1~N时刻，有M个路标点，定义位姿与路标点坐标为，
+$$
+x=\{x_1,\ldots,x_N\},\quad y=\{y_1,\ldots,y_M\}
+$$
+从概率学观点重新看，在已知输入数据$u$和观测数据$z$的条件下，求状态$x,y$的条件概率分布，
+$$P((x,y)|(z,u))$$
+当$u$未知时，即有$P((x,y)|(z))$ \
+为估计状态量的条件分布，则有贝叶斯法则，有
+$$
+P\left(\boldsymbol{x},\boldsymbol{y}|\boldsymbol{z},\boldsymbol{u}\right)=\frac{P\left(\boldsymbol{z},\boldsymbol{u}|\boldsymbol{x},\boldsymbol{y}\right)P\left(\boldsymbol{x},\boldsymbol{y}\right)}{P\left(\boldsymbol{z},\boldsymbol{u}\right)}\propto\underbrace{P\left(\boldsymbol{z},\boldsymbol{u}|\boldsymbol{x},\boldsymbol{y}\right)}_{\text{似然}}\underbrace{P\left(\boldsymbol{x},\boldsymbol{y}\right)}_{\text{先验}}
+$$
+需要求得一个状态最优估计，使得该状态下后验概率最大化，
+$$
+(x,y)_{\mathrm{MAP}}^*=\arg\max P\left(x,y|z,u\right)=\arg\max P(z,u|x,y)P(x,y)
+$$
+在不知道机器人位姿和路标的位置时，可以求解最大似然估计。
+$$
+(\boldsymbol{x},\boldsymbol{y})_{\mathrm{MLE}}^*=\arg\max P(\boldsymbol{z},\boldsymbol{u}|\boldsymbol{x},\boldsymbol{y})
+$$
+现在的问题是求解上式的最大似然估计时，$x_k$的值， \
+对于某次观测，有
+$$
+z_{k,j}=h\left(\boldsymbol{y}_j,\boldsymbol{x}_k\right)+\boldsymbol{v}_{k,j}
+$$
+则观测数据的条件概率为
+$$
+P(\boldsymbol{z}_{j,k}|\boldsymbol{x}_k,\boldsymbol{y}_j)=N\left(h(\boldsymbol{y}_j,\boldsymbol{x}_k),\boldsymbol{Q}_{k,j}\right)
+$$
+它依旧是一个高斯分布，使用最小化负对数的方法求解高斯分布的最大似然。
+$$
+P\left(\boldsymbol{x}\right)=\frac{1}{\sqrt{\left(2\pi\right)^{N}\det(\boldsymbol{\Sigma})}}\exp\left(-\frac{1}{2}(\boldsymbol{x}-\boldsymbol{\mu})^{\mathrm{T}}\boldsymbol{\Sigma}^{-1}\left(\boldsymbol{x}-\boldsymbol{\mu}\right)\right)
+$$
+$$
+\left.-\ln\left(P\left(\boldsymbol{x}\right)\right)=\frac{1}{2}\ln\left(\left(2\pi\right)\right|^{N}\det\left(\boldsymbol{\Sigma}\right)\right)+\frac{1}{2}\left(\boldsymbol{x}-\boldsymbol{\mu}\right)^{\mathrm{T}}\boldsymbol{\Sigma}^{-1}\left(\boldsymbol{x}-\boldsymbol{\mu}\right)
+$$
+看上式，求上式的最小值，第一项与$x_k$无关，则求第二项的最小值。即
+$$
+\begin{aligned}(\boldsymbol{x}_k,\boldsymbol{y}_j)^*&=\arg\max\mathcal{N}(h(\boldsymbol{y}_j,\boldsymbol{x}_k),\boldsymbol{Q}_{k,j})\\&=\arg\min\left(\left(\boldsymbol{z}_{k,j}-h\left(\boldsymbol{x}_{k},\boldsymbol{y}_{j}\right)\right)^{\mathrm{T}}\boldsymbol{Q}_{k,j}^{-1}\left(\boldsymbol{z}_{k,j}-h\left(\boldsymbol{x}_{k},\boldsymbol{y}_{j}\right)\right)\right)\end{aligned}
+$$
+重新回到求解最大似然估计部分，有 
+$$
+P\left(\boldsymbol{z},\boldsymbol{u}|\boldsymbol{x},\boldsymbol{y}\right)=\prod_{k}P\left(\boldsymbol{u}_{k}|\boldsymbol{x}_{k-1},\boldsymbol{x}_{k}\right)\prod_{k,j}P\left(\boldsymbol{z}_{k,j}|\boldsymbol{x}_{k},\boldsymbol{y}_{j}\right)
+$$
+定义各次输入与观测数据与模型之间的误差为，
+$$
+e_{u,k}=x_{k}-f\left(\boldsymbol{x}_{k-1},\boldsymbol{u}_{k}\right)e_{z,j,k}=z_{k,j}-h\left(\boldsymbol{x}_{k},\boldsymbol{y}_{j}\right)
+$$
+则变为，
+$$
+\min J(x,y)=\sum_{k}e_{u,k}^{\mathrm{T}}R_{k}^{-1}e_{u,k}+\sum_{k}\sum_{j}e_{z,k,j}^{\mathrm{T}}Q_{k,j}^{-1}e_{z,k,j}
+$$
 
 
 ## 5.  融合技术
