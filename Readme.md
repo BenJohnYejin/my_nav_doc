@@ -1100,7 +1100,7 @@ $$
 
 ## 4. 视觉基础部分
 ### 4.1 简介
-**参考文献** https://github.com/HKUST-Aerial-Robotics/VINS-Fusion
+**参考文献** 视觉SLAM14讲
 视觉部分实际上我是比较抵触的，原因是其中提到的优化算法以及IMU的使用。 \
 优化算法部分一直认为算是在作弊，实质上就是前后向滤波，后一帧使用前后向滤波融合的值，本质上就是算力换精度。 \
 IMU使用与误差估计以及，一直认为其在使用IMU上有较大的问题，使用预积分怎么会用好IMU？  \
@@ -1110,10 +1110,6 @@ IMU使用与误差估计以及，一直认为其在使用IMU上有较大的问�
 定位问题建模，假设载体的前一时刻运动状态为$\boldsymbol{x}_{k-1}$，控制信息为$\boldsymbol{u}_k$，控制传感器造成的方差以及运动模型方差为$\boldsymbol{w}_k$,则定位问题模型为
 $$
 \boldsymbol{x}_k=f\left(\boldsymbol{x}_{k-1},\boldsymbol{u}_k,\boldsymbol{w}_k\right)
-$$
-建图问题建模，假设载体观测到某一个物体特征点$P_i$的观测量为$O_i$，则该物体特征点的位置为
-$$
-P_i = m\left(\boldsymbol{x}_k,O_i,\right)
 $$
 观测问题建模，假设载体在这一时刻采集到了其他的信息$\boldsymbol y_{j} $，产生了一个观测数据$\boldsymbol z_{k,j}$，观测值噪声为$\boldsymbol v_{k,j}$，则
 $$
@@ -1270,6 +1266,93 @@ $$
 $$
 \min J(x,y)=\sum_{k}e_{u,k}^{\mathrm{T}}R_{k}^{-1}e_{u,k}+\sum_{k}\sum_{j}e_{z,k,j}^{\mathrm{T}}Q_{k,j}^{-1}e_{z,k,j}
 $$
+
+### 4.4 特征点法
+使用openCV获取特征点以及特征匹配。 \
+特征点使用 FAST 角点，描述子为 BRIEF。 \
+匹配算法是快速近似最近邻法。
+
+### 4.5 2D-2D 对极几何
+$$
+x_2^\mathrm{T}t^\wedge Rx_1=0 \\
+p_2^\mathrm{T}K^\mathrm{-T}t^\wedge RK^{-1}p_1=0
+$$
+有对极约束，
+$$
+E=t^\wedge R,\quad F=K^{-\mathrm{T}}EK^{-1},\quad x_2^\mathrm{T}Ex_1=p_2^\mathrm{T}Fp_1=0
+$$
+当有八个特征点时，有
+$$
+\begin{pmatrix}u_2,v_2,1\end{pmatrix}\begin{pmatrix}e_1&e_2&e_3\\\\e_4&e_5&e_6\\\\e_7&e_8&e_9\end{pmatrix}\begin{pmatrix}u_1\\\\v_1\\\\1\end{pmatrix}=0
+$$
+将矩阵展开，
+$$
+e=[e_1,e_2,e_3,e_4,e_5,e_6,e_7,e_8,e_9]^\mathrm{T}
+$$
+则有
+$$
+\begin{pmatrix}u_2^1u_1^1&u_2^1v_1^1&u_2^1&v_2^1u_1^1&v_2^1v_1^1&v_2^1&u_1^1&v_1^1&1\\u_2^2u_1^2&u_2^2v_1^2&u_2^2&v_2^2u_1^2&v_2^2v_1^2&v_2^2&u_1^2&v_1^2&1\\\vdots&\vdots&\vdots&\vdots&\vdots&\vdots&\vdots&\vdots\\u_2^8u_1^8&u_2^8v_1^8&u_2^8&v_2^8u_1^8&v_2^8v_1^8&v_2^8&u_1^8&v_1^8&1\end{pmatrix}\begin{pmatrix}e_1\\\\e_2\\\\e_3\\\\e_4\\\\e_5\\\\e_6\\\\e_7\\\\e_8\\\\e_9\end{pmatrix}
+$$
+设E的SVD分解为
+$$
+E=U\Sigma V^\mathrm{T}
+$$
+则t与R可以被计算为
+$$
+\begin{aligned}&t_{1}^{\wedge}=UR_{Z}(\frac{\pi}{2})\Sigma U^{\mathrm{T}},\quad R_{1}=UR_{Z}^{\mathrm{T}}(\frac{\pi}{2})V^{\mathrm{T}}\\&t_{2}^{\wedge}=UR_{Z}(-\frac{\pi}{2})\Sigma U^{\mathrm{T}},\quad R_{2}=UR_{Z}^{\mathrm{T}}(-\frac{\pi}{2})V^{\mathrm{T}}\end{aligned}
+$$
+将P点带入相机中，查看深度是否都为正，都为正的即为正确解。 \
+为了防止E的病态，重新构造E矩阵
+$$
+E=U\mathrm{diag}(\frac{\sigma_1+\sigma_2}{2},\frac{\sigma_1+\sigma_2}{2},0)\boldsymbol{V}^\mathrm{T}
+$$
+
+在相机在统一平面旋转时，例如无人机俯视过程中，则有
+$$
+n^\mathrm{T}P+d=0
+$$
+$$
+h_1u_1+h_2v_1+h_3-h_7u_1u_2-h_8v_1u_2=u_2 \\
+h_4u_1+h_5v_1+h_6-h_7u_1v_2-h_8v_1v_2=v_2.
+$$
+在有八个特征点时，有
+$$
+\begin{pmatrix}u_1^1&v_1^1&1&0&0&0&-u_1^1u_2^1&-v_1^1u_2^1\\0&0&0&u_1^1&v_1^1&1&-u_1^1v_2^1&-v_1^1v_2^1\\u_1^2&v_1^2&1&0&0&0&-u_1^2u_2^2&-v_1^2u_2^2\\0&0&0&u_1^2&v_1^2&1&-u_1^2v_2^2&-v_1^2v_2^2\\u_1^3&v_1^3&1&0&0&0&-u_1^3u_2^3&-v_1^3u_2^3\\0&0&0&u_1^3&v_1^3&1&-u_1^3v_2^3&-v_1^3v_2^3\\u_1^4&v_1^4&1&0&0&0&-u_1^4u_2^4&-v_1^4u_2^4\\0&0&0&u_1^4&v_1^4&1&-u_1^4v_2^4&-v_1^4v_2^4\end{pmatrix}\begin{pmatrix}h_1\\h_2\\h_2\\h_3\\h_4\\h_5\\h_6\\h_7\\h_8\end{pmatrix}=\begin{pmatrix}u_2^1\\v_2^1\\u_2^2\\v_2^2\\u_2^3\\u_2^4\\v_2^4\\v_2^4\end{pmatrix}
+$$
+
+三角化法获得深度 \
+$$
+s_1x_1=s_2Rx_2+t
+$$
+$$
+s_1x_1^\wedge x_1=0=s_2x_1^\wedge Rx_2+x_1^\wedge t
+$$
+
+
+### 4.5 3D-2D PnP
+使用openCV 或 图优化
+$$
+s_i\boldsymbol{u}_i=K\exp\left(\boldsymbol{\xi}^\wedge\right)\boldsymbol{P}_i  \\
+\xi^*=\arg\min_{\xi}\frac{1}{2}\sum_{i=1}^{n}\left\|u_{i}-\frac{1}{s_{i}}K\exp\left(\xi^{\wedge}\right)\boldsymbol{P}_{i}\right\|_{2}^{2}
+$$
+得到重投影关于李代数的一阶变化 \\
+$$
+\frac{\partial e}{\partial\delta\boldsymbol{\xi}}=-\begin{bmatrix}\frac{f_x}{Z^{\prime}}&0&-\frac{f_xX^{\prime}}{Z^{\prime2}}&-\frac{f_xX^{\prime}Y^{\prime}}{Z^{\prime2}}&f_x+\frac{f_xX^2}{Z^{\prime2}}&-\frac{f_xY^{\prime}}{Z^{\prime}}\\0&\frac{f_y}{Z^{\prime}}&-\frac{f_yY^{\prime}}{Z^{\prime2}}&-f_y-\frac{f_yY^{\prime2}}{Z^{\prime2}}&\frac{f_yX^{\prime}Y^{\prime}}{Z^{\prime2}}&\frac{f_yX^{\prime}}{Z^{\prime}}\end{bmatrix} \\
+\left.\frac{\partial e}{\partial P}=-\left[\begin{array}{ccc}\frac{f_x}{Z^{\prime}}&0&-\frac{f_xX^{\prime}}{Z^{\prime2}}\\0&\frac{f_y}{Z^{\prime}}&-\frac{f_yY^{\prime}}{Z^{\prime2}}\end{array}\right.\right]R
+$$
+
+
+### 4.6 3D-3D ICP
+$$
+\min_{R,t}J=\frac{1}{2}\sum_{i=1}^{n}\left\|p_{i}-p-R\left(p_{i}^{\prime}-p^{\prime}\right)\right\|^{2}+\left\|p-Rp^{\prime}-t\right\|^{2} \\
+\frac{1}{2}\sum_{i=1}^{n}\left\|q_{i}-Rq_{i}^{\prime}\right\|^{2}=\frac{1}{2}\sum_{i=1}^{n}q_{i}^{\mathrm{T}}q_{i}+q_{i}^{\prime\mathrm{T}}R^{\mathrm{T}}Rq_{i}^{\prime}-2q_{i}^{\mathrm{T}}Rq_{i}^{\prime}. \\
+\sum_{i=1}^n-q_i^\mathrm{T}Rq_i^{\prime}=\sum_{i=1}^n-\mathrm{tr}\left(Rq_i^{\prime}q_i^\mathrm{T}\right)=-\mathrm{tr}\left(R\sum_{i=1}^nq_i^{\prime}q_i^\mathrm{T}\right) \\
+W=\sum_{i=1}^nq_iq_i^{\prime\mathrm{T}} \\
+W=U\Sigma V^\mathrm{T} \\
+sort(\Sigma) max->min \\
+R=UV^\mathrm{T} 
+$$
+使用SVD 或 图优化
 
 
 ## 5.  融合技术
