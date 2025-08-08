@@ -12,6 +12,29 @@
 
 **说明：** 除直接服务于客户端的实时导航软件外，一套完备的测试验证工具链（用于数据回放、结果分析、性能评估）及事后数据处理脚本对于保障系统质量和问题定位至关重要。此类工具链在逻辑上归属于第六章（V模型右侧）。
 
+## 0. 一些当时很难理解的术语的解释
+**可观测性** 可观测性（Observability） 是一个核心概念，用于衡量系统状态（如位置、速度、姿态、传感器误差等）能否通过已有的传感器测量值在有限时间内被唯一确定的程度。它直接反映了导航系统的信息获取能力和对状态误差的估计潜力。
+**本质问题：**
+组合导航系统通常使用状态估计器（如卡尔曼滤波）融合来自不同传感器（如IMU、GNSS、里程计、视觉等）的数据。 \
+系统存在许多需要估计的状态量（位置、速度、姿态、陀螺仪零偏、加速度计零偏等），但并非所有状态都能被传感器直接测量到。 \
+可观测性分析就是要回答： 在给定的传感器配置和运动状态下，我们能否利用所有可用的测量信息（包括直接测量和间接推导）来唯一地、可靠地推断出系统所有（或部分）未知状态的值？ \
+数学定义（简化）： \
+一个动态系统（如导航系统）的状态空间模型通常表示为： \
+ẋ(t) = f(x(t), u(t), w(t)) (状态方程 - 描述状态随时间如何演化) \
+z(t) = h(x(t), v(t)) (观测方程 - 描述测量如何与状态关联) \
+其中 x(t) 是状态向量，u(t) 是控制输入（可选），w(t) 是过程噪声，z(t) 是观测向量，v(t) 是观测噪声。 \
+系统在时间区间 [t₀, t₁] 内是可观测的，如果对于该区间内的任意两个不同的初始状态 x₁(t₀) 和 x₂(t₀)，它们产生的观测序列 {z(t) for t in [t₀, t₁]} 也是不同的。换句话说，不同的初始状态会导致不同的测量输出，因此我们可以通过观测序列来区分不同的初始状态（从而估计出它们）。 \
+在组合导航中的具体含义： \
+状态可分离： 可观测性高意味着不同的状态组合（例如，姿态角误差和加速度计零偏）对观测结果（例如，GNSS位置或速度）的影响模式是显著不同且可区分的。卡尔曼滤波器能够“看清”这些状态之间的区别。 \
+误差可估计： 可观测性高的状态（或状态组合），其误差（如IMU的零偏）能够被传感器测量有效地约束和修正。滤波器的估计会快速收敛到真实值附近。 \
+信息冗余与互补： 可观测性源于不同传感器提供互补信息以及系统动态运动带来的信息变化。例如： \
+静止时，仅凭IMU无法区分重力加速度和载体加速度，导致姿态和加速度计零偏不可观测（或弱可观测）。 \
+一旦载体开始加速运动，重力分量和运动加速度分量在IMU测量中的表现就不同了，结合GNSS提供的速度/位置信息，姿态和加速度计零偏就变得（部分）可观测了。 \
+转弯运动对于分离方位角误差和陀螺仪零偏特别有效。\
+高度变化对于分离垂直通道误差和气压计/高度计零偏很重要。 
+
+
+
 ## 1.  惯性导航基础与建模
 **本节内容主要参考并基于[PSINS](https://psins.org.cn/)开源惯性导航算法库的框架与思想构建，并针对当前版本程序给出关键建模说明。**
 ### 1.1  惯性导航基本原理
@@ -686,8 +709,8 @@ RTKlib输出：`sol_t.dop`数组存储DOP值
 #### 2.5.2 实时动态定位(RTK)流程
 
 
-## 3. 里程计与视觉定位部分
-**参考来源**：PINS、视觉SLAM十四讲、VINS  
+## 3. 里程计与视觉定位部分 (视觉部分不熟悉)
+**参考来源**：PINS
 **核心观点**：在不引入回环检测、地标点及地图的情况下，视觉信息可简化为类似里程计的相对测量量。本节重点讨论使用速度或相对位移进行位置递推的方法。
 
 ### 3.1 里程计定位解算
@@ -886,7 +909,6 @@ $$
 $$
 其中：
 $$
-
 \boldsymbol{M}_{aa\mathrm{D}}^{\prime} = -\left( \begin{bmatrix} 0 \\ \omega_{ie}\cos L_{\mathrm{D}} \\ \omega_{ie}\sin L_{\mathrm{D}} \end{bmatrix} + \begin{bmatrix} -\nu_{\mathrm{DN}}/R_{Mi\mathrm{D}} \\ \nu_{\mathrm{DE}}/R_{Ni\mathrm{D}} \\ \nu_{\mathrm{DE}}\tan L_{\mathrm{D}}/R_{Ni\mathrm{D}} \end{bmatrix} \right) \times
 $$
 
@@ -908,10 +930,9 @@ $$
 M_{ak\mathrm{D}}=M_{av\mathrm{D}}M_{\nu k\mathrm{D}}
 $$
 
-### 3.3 EKF_SLAM
-## 4. EKF-SLAM 算法推导与误差分析
-### 4.1 状态空间定义
-#### 4.1.1 状态向量构成
+### 3.3 EKF-SLAM 算法推导与误差分析
+#### 3.3.1 状态空间定义
+##### 3.3.1.1 状态向量构成
 $$
 \boldsymbol{x}_k = \begin{bmatrix} 
 \boldsymbol{x}_{v,k} \\ 
@@ -923,7 +944,7 @@ $$
 - **机器人位姿**：$\boldsymbol{x}_{v,k} = [x_k, y_k, \theta_k]^\top$ (2D 位置与航向)
 - **路标位置**：$\boldsymbol{m}_i = [m_{i,x}, m_{i,y}]^\top$ (第 i 个路标的世界坐标)
 
-#### 4.1.2 协方差矩阵结构
+##### 3.3.1.2 协方差矩阵结构
 $$
 \boldsymbol{P}_k = \begin{bmatrix}
 \boldsymbol{P}_{vv,k} & \boldsymbol{P}_{vm,k} \\ 
@@ -934,8 +955,8 @@ $$
 - $\boldsymbol{P}_{mm,k}$：路标位置协方差 (2n×2n)
 - $\boldsymbol{P}_{vm,k}$：位姿-路标互协方差 (3×2n)
 
-### 4.2 运动模型（预测步骤）
-#### 4.2.1 非线性运动模型
+#### 3.3.2 运动模型（预测步骤）
+##### 3.3.2.1 非线性运动模型
 $$
 \boldsymbol{x}_{v,k} = f(\boldsymbol{x}_{v,k-1}, \boldsymbol{u}_k, \boldsymbol{w}_k) = 
 \begin{bmatrix}
@@ -947,7 +968,7 @@ $$
 - 控制输入：$\boldsymbol{u}_k = [v_k, \omega_k]^\top$ (线速度, 角速度)
 - 过程噪声：$\boldsymbol{w}_k \sim \mathcal{N}(0, \boldsymbol{Q}_k)$
 
-#### 4.2.2 雅可比矩阵计算
+##### 3.3.2.2 雅可比矩阵计算
 $$
 \boldsymbol{F}_x = \frac{\partial f}{\partial \boldsymbol{x}_v} = 
 \begin{bmatrix}
@@ -965,7 +986,7 @@ $$
 \end{bmatrix}
 $$
 
-#### 4.2.3 预测方程
+##### 3.3.2.3 预测方程
 $$\begin{aligned}
 \hat{\boldsymbol{x}}_{k|k-1} &= \begin{bmatrix} f(\boldsymbol{x}_{v,k-1}, \boldsymbol{u}_k, 0) \\ \boldsymbol{m}_{k-1} \end{bmatrix} \\
 \boldsymbol{P}_{k|k-1} &= \boldsymbol{F} \boldsymbol{P}_{k-1} \boldsymbol{F}^\top + \boldsymbol{G} \boldsymbol{Q}_k \boldsymbol{G}^\top
@@ -976,18 +997,18 @@ $$
 \boldsymbol{G} = \begin{bmatrix} \boldsymbol{F}_w \\ 0 \end{bmatrix}
 $$
 
-### 4.3 观测模型（更新步骤）
-#### 4.3.1 非线性观测模型
+#### 3.3.3 观测模型（更新步骤）
+##### 3.3.3.1 非线性观测模型
 $$
 \boldsymbol{z}_k^i = h(\boldsymbol{x}_v, \boldsymbol{m}_i) + \boldsymbol{v}_k^i = 
 \begin{bmatrix}
 \sqrt{(m_{i,x} - x)^2 + (m_{i,y} - y)^2} \\
-\atan2(m_{i,y} - y, m_{i,x} - x) - \theta
+atan2(m_{i,y} - y, m_{i,x} - x) - \theta
 \end{bmatrix}
 $$
 - 观测噪声：$\boldsymbol{v}_k^i \sim \mathcal{N}(0, \boldsymbol{R}_k)$
 
-#### 4.3.2 观测雅可比矩阵
+##### 3.3.3.2 观测雅可比矩阵
 $$
 \boldsymbol{H}^i = \frac{\partial h}{\partial \boldsymbol{x}} = 
 \begin{bmatrix} 
@@ -1007,8 +1028,8 @@ $$
 $$
 - $\Delta x = m_{i,x} - x$, $\Delta y = m_{i,y} - y$, $d = \sqrt{(\Delta x)^2 + (\Delta y)^2}$
 
-### 4.4 数据关联与更新
-#### 4.4.1 新路标初始化
+#### 3.3.4 数据关联与更新
+##### 3.3.4.1 新路标初始化
 若观测到未关联路标：
 $$
 \boldsymbol{m}_\text{new} = \begin{bmatrix}
@@ -1022,7 +1043,7 @@ $$
 \boldsymbol{J} = \begin{bmatrix} \frac{\partial \boldsymbol{m}_\text{new}}{\partial \boldsymbol{x}_v} & \frac{\partial \boldsymbol{m}_\text{new}}{\partial \boldsymbol{z}} \end{bmatrix}
 $$
 
-#### 4.4.2 卡尔曼更新
+##### 3.3.4.2 卡尔曼更新
 $$\begin{aligned}
 \text{新息：} \quad \boldsymbol{\nu}_k^i &= \boldsymbol{z}_k^i - h(\hat{\boldsymbol{x}}_{k|k-1}) \\
 \text{协方差：} \quad \boldsymbol{S}_k^i &= \boldsymbol{H}^i \boldsymbol{P}_{k|k-1} (\boldsymbol{H}^i)^\top + \boldsymbol{R}_k \\
@@ -1031,14 +1052,14 @@ $$\begin{aligned}
 \boldsymbol{P}_{k|k} &= (\boldsymbol{I} - \boldsymbol{K}_k^i \boldsymbol{H}^i) \boldsymbol{P}_{k|k-1}
 \end{aligned}$$
 
-### 4.5 误差分析
-#### 4.5.1 线性化误差
+#### 3.3.4.5 误差分析
+##### 3.3.4.5.1 线性化误差
 | **误差源**         | **数学描述**                          | **影响**               |
 |--------------------|--------------------------------------|------------------------|
 | **一阶近似残差**   | $\|f(\boldsymbol{x}) - f(\hat{\boldsymbol{x}}) - \boldsymbol{F}_x \delta\boldsymbol{x}\|$ | 模型失真导致发散       |
 | **泰勒展开截断**   | $\mathcal{O}(\|\delta\boldsymbol{x}\|^2)$ | 大初始误差时不稳定    |
 
-#### 4.5.2 数据关联误差
+##### 3.3.4.5.2 数据关联误差
 **误关联概率模型**：
 $$ P(\text{错误关联}) = 1 - \int_{\mathcal{Z}} p(\boldsymbol{z} | \text{正确}) d\boldsymbol{z} $$
 其中 $\mathcal{Z} = \{ \boldsymbol{z} : \|\boldsymbol{z} - \hat{\boldsymbol{z}}_i\|_{\boldsymbol{S}^{-1}} < \tau \}$
@@ -1047,21 +1068,21 @@ $$ P(\text{错误关联}) = 1 - \int_{\mathcal{Z}} p(\boldsymbol{z} | \text{正�
 - 单次误关联 → 位姿误差增长 $\|\delta\boldsymbol{x}\| \propto \|\boldsymbol{K}\| \cdot \|\boldsymbol{\nu}_\text{err}\|$
 - 连续误关联 → 协方差矩阵失去正定性
 
-#### 4.5.3 计算复杂度
+##### 3.3.4.5.3 计算复杂度
 $$
 \mathcal{O}(n^3) \quad \text{(矩阵求逆)} \quad \xrightarrow{\text{稀疏性利用}} \mathcal{O}(n^{1.5})
 $$
 - **存储需求**：$\frac{1}{2}(3+2n)(4+2n)$ → 路标数$n$较大时不可行
 
-#### 4.5.4 一致性分析
+##### 3.3.4.5.4 一致性分析
 **NEES检验**：
 $$
 \epsilon_k = (\boldsymbol{x}_k - \hat{\boldsymbol{x}}_k)^\top \boldsymbol{P}_k^{-1} (\boldsymbol{x}_k - \hat{\boldsymbol{x}}_k) \sim \chi^2_{\dim(\boldsymbol{x})}
 $$
 若 $\mathbb{E}[\epsilon_k] > \dim(\boldsymbol{x})$ 则滤波器乐观
 
-### 4.6 性能提升技术
-#### 4.6.1 稀疏化处理
+#### 3.3.4.6 性能提升技术
+##### 3.3.4.6.1 稀疏化处理
 **协方差矩阵近似**：
 $$
 \boldsymbol{P} \approx \begin{bmatrix}
@@ -1071,18 +1092,109 @@ $$
 $$
 - 忽略路标间相关性 → 计算降至$\mathcal{O}(n)$
 
-#### 4.6.2 分治策略
+##### 3.3.4.6.2 分治策略
 **局部子图构建**：
 1. 创建短期局部子图：$\boldsymbol{x}^\text{local} = [\boldsymbol{x}_v, \boldsymbol{m}_{\text{active}}]^\top$
 2. 子图内EKF-SLAM
 3. 子图合并：$\boldsymbol{x}_\text{global} = g(\boldsymbol{x}_\text{global}, \boldsymbol{x}_\text{local})$
 
+## 4. 视觉基础部分
+### 4.1 简介
+**参考文献** https://github.com/HKUST-Aerial-Robotics/VINS-Fusion
+视觉部分实际上我是比较抵触的，原因是其中提到的优化算法以及IMU的使用。 \
+优化算法部分一直认为算是在作弊，实质上就是前后向滤波，后一帧使用前后向滤波融合的值，本质上就是算力换精度。 \
+IMU使用与误差估计以及，一直认为其在使用IMU上有较大的问题，使用预积分怎么会用好IMU？  \
+个人吐槽，以上不算正式的说明，不过相较于IMU与GNSS，OD严格的公式推导过程，即观测量分析，误差分析，随后带入方程即可；SLAM给人一种比较高层次的思维方式，即建立一个问题的数学模型，随后通过解数学模型的方法去求得解释。
 
-## 5. msckf_vio 基于EKF的视觉融合
-**参考文献** Robust Stereo Visual Inertial Odometry for Fast Autonomous Flight
+### 4.2 定位建图问题的数学建模
+定位问题建模，假设载体的前一时刻运动状态为$\boldsymbol{x}_{k-1}$，控制信息为$\boldsymbol{u}_k$，控制传感器造成的方差以及运动模型方差为$\boldsymbol{w}_k$,则定位问题模型为
+$$
+\boldsymbol{x}_k=f\left(\boldsymbol{x}_{k-1},\boldsymbol{u}_k,\boldsymbol{w}_k\right)
+$$
+建图问题建模，假设载体观测到某一个物体特征点$P_i$的观测量为$O_i$，则该物体特征点的位置为
+$$
+P_i = m\left(\boldsymbol{x}_k,O_i,\right)
+$$
+观测问题建模，假设载体在这一时刻采集到了其他的信息$\boldsymbol y_{j} $，产生了一个观测数据$\boldsymbol z_{k,j}$，观测值噪声为$\boldsymbol v_{k,j}$，则
+$$
+\boldsymbol{z}_{k,j}=h\left(\boldsymbol{y}_j,\boldsymbol{x}_k,\boldsymbol{v}_{k,j}\right)
+$$
+当然上述建模过程中特征点可以被描述为地标点。这就是视觉耍赖的地方，算力大和存储空间大，通过记住之前的消息来优化它自己的结果。
+
+### 4.3 预备知识
+#### 4.3.1 视觉如何看旋转变化
+旋转的数学法则基本与惯性导航一致，有几点不一致。
+* 四元数的定义不一样，严老师的定义是实部在后，视觉这个是实部在前。 \
+* 使用了数学定义的群去定义旋转与变换，惯性导航中只有旋转。 \
+可能使用EIGEN库较为方便，其一是不需要单元测试，该库工程实践很多年，没有bug；其二是一些矩阵计算较为方便，特别是多维矩阵计算。 \
+但还是想使用自己实现的矩阵运算库，其一是内存好控制，其二是方便单元测试，其三是熟悉旋转的数学运算。
+看实际工程怎么实现吧。
+
+问题描述，载体的姿态为$T$，观察到世界坐标为$p$的特征点，产生了观测数据为$z$，那么由
+$$ z=T\boldsymbol{p}+\boldsymbol{w} $$
+则观测方程可以被写为，
+$$ e=\boldsymbol{z}-\boldsymbol{Tp} $$
+找到最优的姿态$T$，使得整体的误差最小。
+$$
+\min_{\boldsymbol{T}}J(\boldsymbol{T})=\sum_{i=1}^{N}\|\boldsymbol{z}_{i}-\boldsymbol{T}\boldsymbol{p}_{i}\|_{2}^{2}
+$$
+对$R$进行一次扰动$\Delta R$，查看结果相对于扰动的变化率，假设扰动的李代数为$\mathrm{d}$。则，
+$$
+\frac{\partial\left(\boldsymbol{R}\boldsymbol{p}\right)}{\partial\boldsymbol{\varphi}}=\lim_{\boldsymbol{\varphi}\to\boldsymbol{0}}\frac{\exp\left(\boldsymbol{\varphi}^{\wedge}\right)\exp\left(\boldsymbol{\phi}^{\wedge}\right)\boldsymbol{p}-\exp\left(\boldsymbol{\phi}^{\wedge}\right)\boldsymbol{p}}{\boldsymbol{\varphi}} \\
+\begin{aligned}\frac{\partial\left(Rp\right)}{\partial\varphi}&=\lim_{\varphi\to0}\frac{\exp\left(\varphi^{\wedge}\right)\exp\left(\phi^{\wedge}\right)p-\exp\left(\phi^{\wedge}\right)p}{\varphi}\\&=\lim_{\varphi\to0}\frac{\left(\boldsymbol{I}+\boldsymbol{\varphi}^\wedge\right)\exp\left(\boldsymbol{\phi}^\wedge\right)\boldsymbol{p}-\exp\left(\boldsymbol{\phi}^\wedge\right)\boldsymbol{p}}{\varphi}\\&=\lim_{\varphi\to0}\frac{\varphi^{\wedge}Rp}{\varphi}=\lim_{\varphi\to0}\frac{-(Rp)^{\wedge}\varphi}{\varphi}=-(Rp)^{\wedge}\end{aligned}
+$$
+对于变换，则有
+$$
+\frac{\partial\left(\boldsymbol{T}\boldsymbol{p}\right)}{\partial\delta\boldsymbol{\xi}}=\lim_{\delta\boldsymbol{\xi}\to\boldsymbol{0}}\frac{\exp\left(\delta\boldsymbol{\xi}^\wedge\right)\exp\left(\boldsymbol{\xi}^\wedge\right)\boldsymbol{p}-\exp\left(\boldsymbol{\xi}^\wedge\right)\boldsymbol{p}}{\delta\boldsymbol{\xi}} \\
+\begin{aligned}&=\lim_{\delta\boldsymbol{\xi}\to\mathbf{0}}\frac{\left(\boldsymbol{I}+\delta\boldsymbol{\xi}^{\wedge}\right)\exp\left(\boldsymbol{\xi}^{\wedge}\right)\boldsymbol{p}-\exp\left(\boldsymbol{\xi}^{\wedge}\right)\boldsymbol{p}}{\delta\boldsymbol{\xi}}\\&=\lim_{\delta\boldsymbol{\xi}\to\mathbf{0}}\frac{\delta\boldsymbol{\xi}^{\wedge}\exp\left(\boldsymbol{\xi}^{\wedge}\right)\boldsymbol{p}}{\delta\boldsymbol{\xi}}\\&=\lim_{\delta\boldsymbol{\xi}\to\mathbf{0}}\frac{\begin{bmatrix}\delta\boldsymbol{\phi}^\wedge&\delta\boldsymbol{\rho}\\\mathbf{0}^\mathrm{T}&0\end{bmatrix}\begin{bmatrix}\boldsymbol{R}\boldsymbol{p}+\boldsymbol{t}\\\\1\end{bmatrix}}{\delta\boldsymbol{\xi}}\\&=\lim_{\delta\boldsymbol{\xi}\to\mathbf{0}}\frac{\begin{bmatrix}\delta\phi^\wedge\left(\boldsymbol{Rp}+\boldsymbol{t}\right)+\delta\boldsymbol{\rho}\\\\\mathbf{0}^\mathrm{T}\end{bmatrix}}{[\delta\boldsymbol{\rho},\delta\boldsymbol{\phi}]^\mathrm{T}}=\begin{bmatrix}\boldsymbol{I}&-\left(\boldsymbol{Rp}+\boldsymbol{t}\right)^\wedge\\\\\mathbf{0}^\mathrm{T}&\mathbf{0}^\mathrm{T}\end{bmatrix}\overset{\mathrm{def}}{\operatorname*{=}}\boldsymbol{Tp}\end{aligned}
+$$
+************************************************
+通过对旋转矩阵进行微分，得到旋转矩阵可以由旋转角度的反对称阵计算得到。
+$$
+\boldsymbol{R}(t)=\exp{(\boldsymbol{\phi}_0^{\wedge}t)}
+$$
+注意此时 t=0，且假设旋转角度与时间无关，为一常数。 \
+即，旋转角度形成的反对称阵，可以用于表达旋转矩阵的微分。 \
+仔细想想，符合直觉，旋转的变化就是角度变化引起的，单位时间的旋转矩阵变化量就是旋转角度的方程，现在求出了这个方程的定义。\
+对于变化阵，也有
+$$
+\xi^{\wedge}=\begin{bmatrix}\phi^{\wedge}&\rho\\0^{\mathrm{T}}&0\end{bmatrix}\in\mathbb{R}^{4\times4}
+$$
+
+将以上两式展开，
+ $$
+\exp\left(\phi^{\wedge}\right)=\exp\left(\theta\boldsymbol{a}^{\wedge}\right)=\sum_{n=0}^{\infty}\frac{1}{n!}\left(\theta\boldsymbol{a}^{\wedge}\right)^n  \\
+= \begin{aligned}&=\boldsymbol{I}+\theta\boldsymbol{a}^{\wedge}+\frac{1}{2!}\theta^{2}\boldsymbol{a}^{\wedge}\boldsymbol{a}^{\wedge}+\frac{1}{3!}\theta^{3}\boldsymbol{a}^{\wedge}\boldsymbol{a}^{\wedge}\boldsymbol{a}^{\wedge}+\frac{1}{4!}\theta^{4}(\boldsymbol{a}^{\wedge})^{4}+\cdots\\&=\boldsymbol{a}\boldsymbol{a}^\mathrm{T}-\boldsymbol{a}^\mathrm{\wedge}\boldsymbol{a}^\mathrm{\wedge}+\theta\boldsymbol{a}^\mathrm{\wedge}+\frac{1}{2!}\theta^2\boldsymbol{a}^\mathrm{\wedge}\boldsymbol{a}^\mathrm{\wedge}-\frac{1}{3!}\theta^3\boldsymbol{a}^\mathrm{\wedge}-\frac{1}{4!}\theta^4{(\boldsymbol{a}^\mathrm{\wedge})}^2+\cdots\\&=\boldsymbol{aa}^{\mathrm{T}}+\underbrace{\left(\theta-\frac{1}{3!}\theta^{3}+\frac{1}{5!}\theta^{5}-\cdots\right)}_{\sin\theta}\boldsymbol{a}^{\wedge}-\underbrace{\left(1-\frac{1}{2!}\theta^{2}+\frac{1}{4!}\theta^{4}-\cdots\right)}_{\cos\theta}\boldsymbol{a}^{\wedge}\boldsymbol{a}^{\wedge}\\&=a^\wedge a^\wedge+I+\sin\theta\boldsymbol{a}^\wedge-\cos\theta\boldsymbol{a}^\wedge\boldsymbol{a}^\wedge\\&=(1-\cos\theta)\boldsymbol{a}^\wedge\boldsymbol{a}^\wedge+\boldsymbol{I}+\sin\theta\boldsymbol{a}^\wedge\\&=\cos\theta\boldsymbol{I}+(1-\cos\theta)\boldsymbol{aa}^\mathrm{T}+\sin\theta\boldsymbol{a}^\mathrm{\wedge}.\end{aligned}
+ $$
+即
+$$
+\phi=\ln\left(\boldsymbol{R}\right)^\vee=\left(\sum_{n=0}^\infty\frac{\left(-1\right)^n}{n+1}\left(\boldsymbol{R}-\boldsymbol{I}\right)^{n+1}\right)^\vee
+$$
+展开，
+$$
+\begin{aligned}\exp\left(\xi^{\wedge}\right)&=\begin{bmatrix}\sum_{n=0}^{\infty}\frac{1}{n!}(\phi^{\wedge})^{n}&\sum_{n=0}^{\infty}\frac{1}{(n+1)!}(\phi^{\wedge})^{n}\rho\\\\\mathbf{0}^{\mathrm{T}}&1\end{bmatrix}\\&\overset{\Delta}{\operatorname*{=}}\begin{bmatrix}R&J\rho\\\\0^\mathrm{T}&1\end{bmatrix}=T.\end{aligned}
+$$
+$$
+\boldsymbol{J}=\frac{\sin\theta}{\theta}\boldsymbol{I}+\left(1-\frac{\sin\theta}{\theta}\right)\boldsymbol{a}\boldsymbol{a}^\mathrm{T}+\frac{1-\cos\theta}{\theta}\boldsymbol{a}^\mathrm{^{\prime}}
+$$
+考虑在一个姿态矩阵中，有一个微小的扰动，则此时对于李代数而言，
+$$
+\exp\left(\Delta\phi^{\wedge}\right)\exp\left(\phi^{\wedge}\right)=\exp\left(\left(\phi+J_{l}^{-1}\left(\phi\right)\Delta\phi\right)^{\wedge}\right) \\
+\exp\left(\Delta\boldsymbol{\xi}^{\wedge}\right)\exp\left(\boldsymbol{\xi}^{\wedge}\right)\approx\exp\left(\left(\boldsymbol{J}_{l}^{-1}\Delta\boldsymbol{\xi}+\boldsymbol{\xi}\right)^{\wedge}\right),\exp\left(\boldsymbol{\xi}^{\wedge}\right)\exp\left(\Delta\boldsymbol{\xi}^{\wedge}\right)\approx\exp\left(\left(\boldsymbol{J}_{r}^{-1}\Delta\boldsymbol{\xi}+\boldsymbol{\xi}\right)^{\wedge}\right)
+$$
+#### 4.3.2 视觉数据如何处理
+坐标系定义
 
 
-## 4.  融合技术
+
+
+
+
+
+
+
+
+## 5.  融合技术
 ### 卡尔曼滤波技术
 
 
