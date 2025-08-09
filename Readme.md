@@ -1475,7 +1475,7 @@ $$
 $$
 此时J为
 $$
-J=[F & E]
+J=[F \ E]
 $$
 因为雅可比矩阵非常大，所以针对其性质做数学上的变化。
 $$
@@ -1507,7 +1507,7 @@ $$
 P(\boldsymbol{x_\mathrm{c}},\boldsymbol{x_p})=P(\boldsymbol{x_\mathrm{c}}|\boldsymbol{x_p})P(\boldsymbol{x_p})
 $$
 
-## 4.9 滑动窗口优化 建图
+## 4.9 滑动窗口优化 建图 (与全局优化差不多，公式没复制全，先空着)
 $$
 p\left(\boldsymbol{x}_1,\ldots\boldsymbol{x}_4,\boldsymbol{y}_1,\ldots\boldsymbol{y}_6\right)=p\left(\boldsymbol{x}_2,\ldots,\boldsymbol{x}_4,\boldsymbol{y}_1,\ldots\boldsymbol{y}_6|\boldsymbol{x}_1\right)\underbrace{p\left(\boldsymbol{x}_1\right)}_{\text{舍去}}
 $$
