@@ -3,18 +3,19 @@
 **为应对频繁工作环境被损坏导致的数据、代码及工具丢失风险（即便采用移动硬盘备份仍存在意外删除的可能），特将部分技术资料、算法实现及学习心得集中归档于此文档。**  \
 
 文档主体规划为六个章节：
-1.  **第一章节** - 简单阐述惯性导航的软件实现。
-2.  **第二章节** - 简单阐述卫星导航中SPP的软件实现。
-3.  **第三章节** - 简单阐述里程计的递推软件实现。
-4.  **第四章节** - 简单阐述视觉前端的软件实现。
-5.  **第五章：V模型左侧 - 开发实现** - 聚焦工程化实现，包括实时导航软件的设计与开发。
-3.  **第六章：V模型右侧 - 测试验证与分析** - 涵盖测试程序开发、数据处理脚本编写及事后数据分析方法。
+1.  **第一章节** - 简单阐述惯性导航的实现。
+2.  **第二章节** - 简单阐述卫星导航中SPP的实现。
+3.  **第三章节** - 简单阐述里程计的递推实现。
+4.  **第四章节** - 简单阐述视觉的实现。
+5.  **第五章：kalman滤波的融合** -穷哥们资源受限的嵌入式平台
+6.  **第六章：基于优化的融合**   -富少爷使用的域控制器
+7.  **第七章：V模型左侧 - 开发实现** - 聚焦工程化实现，包括实时导航软件的设计与开发。
+8.  **第八章：V模型右侧 - 测试验证与分析** - 涵盖测试程序开发、数据处理脚本编写及事后数据分析方法。
 
 **说明：** 除直接服务于客户端的实时导航软件外，一套完备的测试验证工具链（用于数据回放、结果分析、性能评估）及事后数据处理脚本对于保障系统质量和问题定位至关重要。此类工具链在逻辑上归属于第六章（V模型右侧）。
 
 ## 0. 一些当时很难理解的术语的解释
 **可观测性** 可观测性（Observability） 是一个核心概念，用于衡量系统状态（如位置、速度、姿态、传感器误差等）能否通过已有的传感器测量值在有限时间内被唯一确定的程度。它直接反映了导航系统的信息获取能力和对状态误差的估计潜力。
-**本质问题：**
 组合导航系统通常使用状态估计器（如卡尔曼滤波）融合来自不同传感器（如IMU、GNSS、里程计、视觉等）的数据。 \
 系统存在许多需要估计的状态量（位置、速度、姿态、陀螺仪零偏、加速度计零偏等），但并非所有状态都能被传感器直接测量到。 \
 可观测性分析就是要回答： 在给定的传感器配置和运动状态下，我们能否利用所有可用的测量信息（包括直接测量和间接推导）来唯一地、可靠地推断出系统所有（或部分）未知状态的值？ \
@@ -41,6 +42,8 @@ SLAM的核心优化问题（如Bundle Adjustment, 基于图优化）通常是一
 它提供了关键的梯度信息 (J^T * e)，告诉优化器朝哪个方向调整位姿能降低误差。 \
 它用于构建近似的Hessian矩阵 (J^T * J)，这是计算有效优化步长 (Δξ) 的基础。 \
 它量化了位姿变化对误差的局部影响，并在一定程度上揭示了系统的可观测性。 
+
+
 
 
 ## 1.  惯性导航基础与建模
@@ -516,6 +519,7 @@ $$
 
 ## 2. GNSS定位基础与定位原理
 **本节内容主要参考并基于[RTKlib](https://www.rtklib.com/)开源GNSS算法库的框架构建（v2.4.3），重点说明关键模型实现细节。**
+**参考 GPS原理以及接收机设计**
 
 ### 2.1 无线电定位基本原理
 GNSS定位通过测量到多颗已知位置卫星的距离，采用空间后方交会确定接收机位置。实现高精度定位需建立四大基础系统：
@@ -698,23 +702,169 @@ RTKlib实现：`ddres()`函数中多普勒残差计算
 
 RTKlib输出：`sol_t.dop`数组存储DOP值
 
-### 2.5 定位解算流程
-#### 2.5.1 单点定位(SPP)流程
-1. **数据准备**：
-   - 读取观测值文件(`obsd_t`)
-   - 读取广播星历(`eph_t`)
+### 2.5  导航电文结构，信号端的问题，暂不分析
+若研究超紧组合，信号端的可能也要会，可能需要一些信号与系统的知识。
 
-2. **误差修正**：
-   - 卫星钟差：广播参数计算(`eph2clk()`)
-   - 电离层延迟：Klobuchar模型(`ionmodel()`)
-   - 对流层延迟：Saastamoinen模型(`tropmodel()`)
 
-3. **最小二乘解算**：
-   - 设计矩阵构建：`rescode()`
-   - 加权最小二乘：`lsq()`
-   - 结果输出：`sol_t`
+### 2.6  通过星历计算规划时间t_k系的位置与速度 以及加速度（插值使用）
+接收机在t时刻下，计算得到规划时间t_k为，t_{oe}为星历的时间。
+$$t_{k}=t-t_{oe}$$
+计算卫星的平均角速度n
+$$n=n_{0}+\Delta n$$
+计算平近点角
+$$M_{k}=M_{0}+nt_{k}$$
+计算偏近点角，
+$$E_{j}=M+e_{s}\sin(E_{j-1})$$
+计算真近点角，
+$$\nu=\arctan\left(\frac{\sqrt{1-e_s^2}\sin E}{\cos E-e_s}\right)$$
+计算升交点角距
+$$\Phi_{k}=\nu_{k}+\omega$$
+计算摄动校正
+$$ 
+\begin{gathered}
+\delta u_{k}=C_{us}\sin(2\Phi_{k})+C_{uc}\cos(2\Phi_{k})\\
+\delta r_{k}=C_{rs}\sin(2\Phi_{k})+C_{rc}\cos(2\Phi_{k})\\
+\delta i_{k}=C_{is}\sin(2\Phi_{k})+C_{ic}\cos(2\Phi_{k})
+\end{gathered}
+$$
+计算升交点角距，矢径长度和轨道倾角
+$$u_{k}=\Phi_{k}+\delta u_{k}$$
+$$r_{k}=a_{s}\begin{pmatrix}{1-e_{s}}&{\cos E_{k}}\end{pmatrix}+\delta r_{k}$$
+$$i_{k}=i_{0}+i\cdot t_{k}+\delta i_{k}$$
+计算轨道平面的位置
+$$
+x_{k}^{\prime}=r_{k}\cos u_{k} \\
+y_{k}^{\prime}=r_{k}\sin u_{k}
+$$
+计算升交点赤经
+$$
+\Omega_{k}=\Omega_{0}+(\dot{\Omega}-\dot{\Omega}_{e})t_{k}-\dot{\Omega}_{e}t_{oe}
+$$
+计算得到卫星在WGS84坐标系下的位置
+$$
+\begin{aligned}
+&x_{k}=x_{k}^{\prime}\cos\Omega_{k}-y_{k}^{\prime}\cos i_{k}\sin\Omega_{k}\\
+&y_{k}=x_{k}^{\prime}\sin\Omega_{k}+y_{k}^{\prime}\cos i_{k}\cos\Omega_{k}\\
+&z_{k}=y_{k}^{\prime}\sin i_{k}
+\end{aligned}
+$$
 
-#### 2.5.2 实时动态定位(RTK)流程
+也有取dt的方法确认速度。
+
+计算信号发射时刻的 偏近点角速率
+$$
+\dot{E}_k=\frac{\dot{M}_k}{1-e_s\cos E_k} \\
+\dot{E}_k=\frac{n}{1-e_s\cos E_k}
+$$
+计算信号发射时刻的 升交点赤经速率
+$$
+\dot{\Phi}_{k}=\dot{\nu}_{k} \\
+=\frac{\left(1+e_{s}\cos\nu_{k}\right)\dot{E}_{k}\sin E_{k}}{\left(1-e_{s}\cos E_{k}\right)\sin\nu_{k}}\\ =\frac{\sqrt{1-e_{s}^{2}}\dot{E}_{k}}{1-e_{s}\cos E_{k}}
+$$
+计算摄动校正量
+$$
+\delta\dot{u}_{k}=2\dot{\Phi}_{k}\left(C_{us}\cos(2\Phi_{k})-C_{uc}\sin(2\Phi_{k})\right) \\
+\delta\dot{r}_{k}=2\dot{\Phi}_{i:}\left(C_{rs}\cos(2\Phi_{k})-C_{rc}\sin(2\Phi_{k})\right) \\
+\delta\dot{i}_{k}=2\dot{\Phi}_{k}\left(C_{is}\cos(2\Phi_{k})-C_{ic}\sin(2\Phi_{k})\right)
+$$
+计算其他的校正量
+$$
+\begin{gathered}
+\dot{u}_{k}=\dot{\Phi}_{k}+\delta\dot{u}_{k}\\
+\dot{r}_{k}=a_{s}e_{s}\dot{E}_{k}\sin E_{k}+\delta\dot{r}_{k}\\
+i_{k}=i+\delta i_{k}\\
+\dot{\Omega}_{k}=\dot{\Omega}-\dot{\Omega}_{e}
+\end{gathered}
+$$
+得到轨道的速度
+$$
+\dot{x}_{k}^{\prime}=\dot{r}_{k}\cos u_{k}-r_{k}\dot{u}_{k}\sin u_{k} \\
+\dot{y}_{k}^{\prime}=\dot{r}_{k}\sin u_{k}+r_{k}\dot{u}_{k}\cos u_{k}
+$$
+得到WGS84的速度
+$$
+\begin{aligned}
+&\dot{x}_{k}=(\dot{x}_{k}^{\prime}-y_{k}^{\prime}\dot{\Omega}_{k}\cos i_{k})\cos\Omega_{k}-(x_{k}^{\prime}\dot{\Omega}_{k}+\dot{y}_{k}^{\prime}\cos i_{k}-y_{k}^{\prime}\dot{i}_{k}\sin i_{k})\sin\Omega_{k}\\
+&=-y_{k}\dot{\Omega}_{k}-(\dot{y}_{k}^{\prime}\cos i_{k}-z_{k}\dot{i}_{k})\sin\Omega_{k}+\dot{x}_{k}^{\prime}\cos\Omega_{k}\\
+&\dot{y}_{k}=(\dot{x}_{k}^{\prime}-y_{k}^{\prime}\dot{\Omega}_{k}\cos i_{k})\sin\Omega_{k}+(x_{k}^{\prime}\dot{\Omega}_{k}+\dot{y}_{k}^{\prime}\cos i_{k}-y_{k}^{\prime}i_{k}\sin i_{k})\cos\Omega_{k}\\
+&=x_{k}\dot{\Omega}_{k}+(\dot{y}_{k}^{\prime}\cos i_{k}-z_{k}\dot{i}_{k})\cos\Omega_{k}+\dot{x}_{k}^{\prime}\sin\Omega_{k}\\
+&z_k=\dot{y}_{k}^{\prime}\sin i_{k}+y_{k}^{\prime}i_{k}\cos i_{k}
+\end{aligned}
+$$
+
+### 2.8 各个误差模型的建模
+#### 2.8.1 卫星时钟校正
+$$\delta t^{(s)}=\Delta t^{(s)}+\Delta t_{r}-T_{GD}$$
+$$\Delta t_{r}=Fe_{s}\sqrt{a_{s}}\sin E_{k}$$
+$$\Delta t^{(s)}=a_{f0}+a_{f1}(t-t_{oc})+a_{f2}(t-t_{oc})^{2}$$
+$t_{oc}$ 为参考时间。
+实际上还有一个信号传播延时需要扣除。
+#### 2.8.1 电离层模型建模
+$$
+\rho_{1}=r+\delta t_{u}-\delta t^{(s)}+I_{1}+T+\varepsilon_{\rho_{1}} \\
+\rho_{2}=r+\delta t_{u}-\delta t^{(s)}+I_{2}+T+\varepsilon_{\rho_{2}}
+$$
+$$
+I_{1}=40.28\frac{N_{e}}{{f_{1}}^{2}} \\
+I_{2}=40.28\frac{N_{e}}{{f_{2}}^{2}} \\
+I_1=\frac{f_2^2}{f_1^2-f_2^2}(\rho_2-\rho_1)
+$$
+$$
+\begin{aligned}
+\rho_{1,2}&=\rho_{1}-I_{1}\approx r+\delta t_{u}-\delta t^{(s)}+T_{,}\\
+&=\frac{f_{1}^{2}}{f_{1}^{2}-f_{2}^{2}}\rho_{1}-\frac{f_{2}^{2}}{f_{1}^{2}-f_{2}^{2}}\rho_{2} \\
+&=2.546\rho_{1}-1.546\rho_{2}
+\end{aligned}
+$$
+#### 2.8.2 对流层模型建模
+$$
+T=\frac{2.47}{\sin\theta+0.0121}
+$$
+#### 2.9 伪距定位原理
+在观测到多个伪距方程
+$$\rho^{(n)}=r^{(n)}+\delta t_{u}-\delta t^{(n)}+\hat{I}^{(n)}+T^{(n)}+\varepsilon_{\rho}^{(n)}$$
+定义校正后的伪距观测为
+$$\rho_c^{(n)}=\rho^{(n)}+\delta t^{(n)}-I^{(n)}-T^{(n)}$$
+以及校正后的观测方程为
+$$r^{(n)}+\delta t_{u}=\rho_{c}^{(n)}-\varepsilon_{\rho}^{(n)} $$
+$$r^{(n)}=\left\|x^{(n)}-x\right\|=\sqrt{\left(x^{(n)}-x\right)^{2}+\left(y^{(n)}-y\right)^{2}+\left(z^{(n)}-z\right)^{2}}$$
+本质是求解这样一个方程组
+$$\sqrt{\left(x^{(1)}-x\right)^{2}+\left(y^{(1)}-y\right)^{2}+\left(z^{(1)}-z\right)^{2}}+\delta t_{u}=\rho_{c}^{(1)}\\
+\sqrt{\left(x^{(2)}-x\right)^{2}+\left(y^{(2)}-y\right)^{2}+\left(z^{(2)}-z\right)^{2}}+\delta t_{u}=\rho_{c}^{(2)}\\
+\cdots \\
+\sqrt{\left(x^{(N)}-x\right)^{2}+\left(y^{(N)}-y\right)^{2}+\left(z^{(N)}-z\right)^{2}}+\delta t_{u}=\rho_{c}^{(N)}$$
+线性化后，
+$$G=\begin{bmatrix}-I_x^{(1)}(x_{k-1})&-I_y^{(1)}(x_{k-1})&-I_z^{(1)}(x_{k-1})&1\\-I_x^{(2)}(x_{k-1})&-I_y^{(2)}(x_{k-1})&-I_z^{(2)}(x_{k-1})&1\\\cdots&\cdots&\cdots&\cdots\\-I_x^{(N)}(x_{k-1})&-I_y^{(N)}(x_{k-1})&-I_z^{(N)}(x_{k-1})&1\end{bmatrix}=\begin{bmatrix}-[I^{(1)}(x_{k-1})]^\mathrm{T}&1\\-[I^{(2)}(x_{k-1})]^\mathrm{T}&1\\\cdots&\cdots\\-[I^{(N)}(x_{k-1})]^\mathrm{T}&1\end{bmatrix}$$
+$$b=\begin{bmatrix}\rho_c^{(1)}-r^{(1)}(x_{k-1})-\delta t_{u,k-1}\\\rho_c^{(2)}-r^{(2)}(x_{k-1})-\delta t_{u,k-1}\\\cdots\\\rho_c^{(N)}-r^{(N)}(x_{k-1})-\delta t_{u,k-1}\end{bmatrix}$$
+$$-I_{x}^{(n)}(x_{k-1})=\frac{-(x^{(n)}-x_{k-1})}{r^{(n)}(x_{k-1})}=\frac{-(x^{(n)}-x_{k-1})}{\left\|x^{(n)}-x_{k-1}\right\|}=\frac{\partial r^{(n)}}{\partial x}|_{x=x_{k-1}}$$
+实际中，该方程并非难点，难点在于每颗星的定权。 \\
+可知加权解为 
+$$
+\hat{x}=(H^TWH)^{-1}H^TWy\quad(J_{WLS}=v^TWv\to\min)
+$$
+#### 2.10 伪距定位误差分析
+$$\sigma_{URE}^2=\sigma_{CS}^2+\sigma_{P}^2+\sigma_{RNM}^2$$
+$$\begin{aligned}&=(G^{\mathrm{T}}G)^{-1}\sigma_{URE}^{2}\\&=H\sigma_{URE}^{2}\end{aligned}$$
+
+#### 2.11 多普勒测速
+观测方程为
+$$\dot{\rho}^{(n)}=\dot{r}^{(n)}+\delta f_{u}-\delta f^{(n)}+\varepsilon_{\dot{\rho}}^{(n)}$$
+在有多个观测时，
+$$
+-\nu\cdot I^{(n)}+\delta f_{u}=\left(\dot{\rho}^{(n)}-\nu^{(n)}\cdot I^{(n)}+\delta f^{(n)}\right)-\varepsilon_{\dot{\rho}}^{(n)}
+$$
+即有
+$$
+G\begin{bmatrix}\nu_x\\\nu_y\\\nu_z\\\delta f_u\end{bmatrix}=\dot{b}+\varepsilon_\rho
+$$
+同理加权解为
+$$
+\hat{x}=(H^TWH)^{-1}H^TWy\quad(J_{WLS}=v^TWv\to\min)
+$$
+
+### 2.12 RTK差分定位流程
+
+
 
 
 ## 3. 里程计与视觉定位部分 (视觉部分不熟悉)
@@ -747,7 +897,7 @@ $$
 \boldsymbol{v}_\mathrm{D}^n = C_b^n \boldsymbol{v}_\mathrm{D}^m
 $$
 
-#### 3.1.3 位置更新算法
+#### 3.1.3 位置更新
 位置微分方程：
 $$
 \dot{\boldsymbol{p}}_{\mathrm{D}} = \boldsymbol{M}_{p\nu\mathrm{D}} \boldsymbol{v}_{\mathrm{D}}^{n}
@@ -776,7 +926,7 @@ h_{\mathrm{D}(j)} &= h_{\mathrm{D}(j-1)} + \Delta S_{\mathrm{U}(j)}
 $$
 其中$\Delta\boldsymbol{S}_{j}^{n} = \begin{bmatrix} \Delta S_{\mathrm{E}(j)} & \Delta S_{\mathrm{N}(j)} & \Delta S_{\mathrm{U}(j)} \end{bmatrix}^{T}$为位移增量。
 
-#### 3.1.4 姿态更新算法
+#### 3.1.4 姿态更新
 姿态矩阵微分方程：
 $$
 \dot{C}_{b}^{n} = C_{b}^{n}(\boldsymbol{\omega}_{ib}^{b}\times) - (\boldsymbol{\omega}_{in}^{n}\times)C_{b}^{n}
@@ -1507,7 +1657,7 @@ $$
 P(\boldsymbol{x_\mathrm{c}},\boldsymbol{x_p})=P(\boldsymbol{x_\mathrm{c}}|\boldsymbol{x_p})P(\boldsymbol{x_p})
 $$
 
-## 4.9 滑动窗口优化 建图 (与全局优化差不多，公式没复制全，先空着)
+## 4.9 滑动窗口优化 建图 (当前阶段认为与全局优化差不多，公式没复制全，先空着)
 $$
 p\left(\boldsymbol{x}_1,\ldots\boldsymbol{x}_4,\boldsymbol{y}_1,\ldots\boldsymbol{y}_6\right)=p\left(\boldsymbol{x}_2,\ldots,\boldsymbol{x}_4,\boldsymbol{y}_1,\ldots\boldsymbol{y}_6|\boldsymbol{x}_1\right)\underbrace{p\left(\boldsymbol{x}_1\right)}_{\text{舍去}}
 $$
@@ -1547,15 +1697,8 @@ $$
 
 
 
-
-## 5.  融合技术
-### 卡尔曼滤波技术
-
-
-
-
-###  MEMS 车载 GNSS/INS 松组合导航方案
-
+## 5 基于kalman融合技术-算力受限的嵌入式上实现 穷哥们
+### 5.1 MEMS 车载 GNSS/INS 松组合导航方案
 MEMS 惯性传感器的误差特性复杂，在车载应用环境下，可利用的观测量（如 GNSS 位置/速度）相对有限，导致部分误差参数（如高阶随机过程参数）的可观测性较低，难以在线精确估计。因此，在状态量建模时，应优先关注对导航解算影响显著且相对可观测的误差项。
 
 针对车载应用场景，采用以下核心状态向量进行估计：
@@ -1569,8 +1712,10 @@ $$X_k = [\delta \mathbf{\phi}^T, \delta \mathbf{v}^T, \delta \mathbf{p}^T, \math
 *  $\mathbf{e}_b$: 陀螺仪零偏向量 (3x1)
 *  $\mathbf{d}_b$: 加速度计零偏向量 (3x1)
 
-
 **该模型的核心思想是：** 在保证主要误差项得到有效估计和补偿的前提下，通过精简状态维度和聚焦可观测参数，提升滤波器的稳定性和实时性，更适用于资源受限的MEMS车载平台。
+
+## 6 优化技术-使用算力优势的平台 富少爷
+
 
 
 ## 5.  软件设计
