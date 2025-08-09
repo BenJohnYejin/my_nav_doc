@@ -33,6 +33,14 @@ z(t) = h(x(t), v(t)) (观测方程 - 描述测量如何与状态关联) \
 转弯运动对于分离方位角误差和陀螺仪零偏特别有效。\
 高度变化对于分离垂直通道误差和气压计/高度计零偏很重要。 
 
+**优化问题**
+SLAM的核心优化问题（如Bundle Adjustment, 基于图优化）通常是一个非线性最小二乘问题：目标是找到最优的机器人位姿（可能还有地图点坐标），使得预测的观测值（如图像特征点位置、激光雷达点云到面的距离）与实际观测值之间的误差平方和最小。 \
+雅可比矩阵 J 本质上就是误差函数 e 关于优化变量 ξ（这里主要指位姿，通常用李代数 se(3) 或 so(3) 表示）的一阶导数（梯度）矩阵： J = ∂e/∂ξ \
+非线性优化通过迭代线性化来逼近最优解。在当前位姿估计点 ξ_k 附近，复杂的非线性误差函数 e(ξ) 被近似为一个线性函数：e(ξ_k + Δξ) ≈ e(ξ_k) + J(ξ_k) * Δξ \
+雅可比矩阵 J 精确地描述了在当前位置 ξ_k 附近，位姿的微小变化 Δξ 会对误差 e 产生怎样的线性影响。优化器利用这个线性模型来决定如何走这一步 Δξ \
+它提供了关键的梯度信息 (J^T * e)，告诉优化器朝哪个方向调整位姿能降低误差。 \
+它用于构建近似的Hessian矩阵 (J^T * J)，这是计算有效优化步长 (Δξ) 的基础。 \
+它量化了位姿变化对误差的局部影响，并在一定程度上揭示了系统的可观测性。 
 
 
 ## 1.  惯性导航基础与建模
@@ -1267,7 +1275,7 @@ $$
 \min J(x,y)=\sum_{k}e_{u,k}^{\mathrm{T}}R_{k}^{-1}e_{u,k}+\sum_{k}\sum_{j}e_{z,k,j}^{\mathrm{T}}Q_{k,j}^{-1}e_{z,k,j}
 $$
 
-### 4.4 特征点法
+### 4.4 视觉里程计--特征点法 前端实时
 使用openCV获取特征点以及特征匹配。 \
 特征点使用 FAST 角点，描述子为 BRIEF。 \
 匹配算法是快速近似最近邻法。
@@ -1353,6 +1361,191 @@ sort(\Sigma) max->min \\
 R=UV^\mathrm{T} 
 $$
 使用SVD 或 图优化
+
+## 4.7 视觉里程计 -- 稀疏光流法 前端实时
+在一个t时刻，位于(x,y)处的像素，它的灰度为$I(x,y,t)$，假设同一个空间的像素灰度值在不同的图像中是固定不变的。那么就有，
+$$
+I(x+\mathrm{d}x,y+\mathrm{d}y,t+\mathrm{d}t)=I(x,y,t)
+$$
+展开，保留一阶项，
+$$
+I\left(x+\mathrm{d}x,y+\mathrm{d}y,t+\mathrm{d}t\right)\approx I\left(x,y,t\right)+\frac{\partial\boldsymbol{I}}{\partial x}\mathrm{d}x+\frac{\partial\boldsymbol{I}}{\partial u}\mathrm{d}y+\frac{\partial\boldsymbol{I}}{\partial t}\mathrm{d}t \\
+\frac{\partial\boldsymbol{I}}{\partial x}\mathrm{d}x+\frac{\partial\boldsymbol{I}}{\partial y}\mathrm{d}y+\frac{\partial\boldsymbol{I}}{\partial t}\mathrm{d}t=0
+$$
+两边同时除以$dt$，
+$$
+\frac{\partial I}{\partial x}\frac{\mathrm{d}x}{\mathrm{d}t}+\frac{\partial I}{\partial y}\frac{\mathrm{d}y}{\mathrm{d}t}=-\frac{\partial I}{\partial t}
+$$
+于是有，
+$$
+\begin{bmatrix}I_x&I_y\end{bmatrix}\begin{bmatrix}u\\\\v\end{bmatrix}=-I_t
+$$
+假设，一个窗口$w$内的所有像素具有相同的变化。
+$$
+\begin{bmatrix}\boldsymbol{I}_x&\boldsymbol{I}_y\end{bmatrix}_k\begin{bmatrix}u\\\\v\end{bmatrix}=-\boldsymbol{I}_{tk},\quad k=1,\ldots,w^2 \\
+\boldsymbol{A}=\begin{bmatrix}\left[\boldsymbol{I}_x,\boldsymbol{I}_y\right]_1\\\vdots\\\\\left[\boldsymbol{I}_x,\boldsymbol{I}_y\right]_k\end{bmatrix} \\
+\boldsymbol{b}=\begin{bmatrix}\boldsymbol{I}_{t1}\\\vdots\\\\\boldsymbol{I}_{tk}\end{bmatrix}
+$$
+于是
+$$
+A\begin{bmatrix}u\\\\v\end{bmatrix}=-b \\
+\begin{bmatrix}u\\\\v\end{bmatrix}^*=-\left(A^\mathrm{T}A\right)^{-1}A^\mathrm{T}b
+$$
+从优化的角度来讲，有
+$$
+\min_{\Delta x,\Delta y}\left\|\boldsymbol{I}_1\left(x,y\right)-\boldsymbol{I}_2\left(x+\Delta x,y+\Delta y\right)\right\|_2^2
+$$
+
+## 4.8 视觉里程计 -- 直接法 前端实时
+有像素点与空间点的方程
+$$
+\boldsymbol{p}_1=\begin{bmatrix}u\\\\v\\\\1\end{bmatrix}_1=\frac{1}{Z_1}\boldsymbol{KP} \\
+\boldsymbol{p}_2=\begin{bmatrix}u\\\\v\\\\1\end{bmatrix}_2=\frac{1}{Z_2}\boldsymbol{K}\left(\boldsymbol{R}\boldsymbol{P}+\boldsymbol{t}\right)=\frac{1}{Z_2}\boldsymbol{K}\left(\boldsymbol{T}\boldsymbol{P}\right)_{1:3}
+$$
+假设我们现在有一个位姿估计，找到了另一个位置下的像素点，我们要找到一个位姿计算两个像素点灰度值的差最小。
+$$
+e=\boldsymbol{I}_1\left(\boldsymbol{p}_1\right)-\boldsymbol{I}_2\left(\boldsymbol{p}_2\right) \\
+\min_{\boldsymbol{T}}J\left(\boldsymbol{T}\right)=\sum_{i=1}^{N}e_{i}^{\mathrm{T}}e_{i},\quad e_{i}=\boldsymbol{I}_{1}\left(\boldsymbol{p}_{1,i}\right)-\boldsymbol{I}_{2}\left(\boldsymbol{p}_{2,i}\right)
+$$
+可以推导出优化的雅可比矩阵
+$$
+q=TP \\
+u=\frac{1}{Z_2}Kq \\
+e(T)=I_1(p_1)-I_2(u) \\
+\frac{\partial e}{\partial\boldsymbol{T}}=\frac{\partial\boldsymbol{I}_2}{\partial\boldsymbol{u}}\frac{\partial\boldsymbol{u}}{\partial\boldsymbol{q}}\frac{\partial\boldsymbol{q}}{\partial\delta\boldsymbol{\xi}}\delta\boldsymbol{\xi} \\
+\frac{\partial\boldsymbol{u}}{\partial\boldsymbol{q}}=\begin{bmatrix}\frac{\partial u}{\partial X}&\frac{\partial u}{\partial Y}&\frac{\partial u}{\partial Z}\\\frac{\partial v}{\partial X}&\frac{\partial v}{\partial Y}&\frac{\partial v}{\partial Z}\end{bmatrix}=\begin{bmatrix}\frac{f_x}{Z}&0&-\frac{f_xX}{Z^2}\\\\0&\frac{f_y}{Z}&-\frac{f_yY}{Z^2}\end{bmatrix} \\
+\frac{\partial\boldsymbol{q}}{\partial\delta\boldsymbol{\xi}}=[I,-\boldsymbol{q}^{\wedge}] 
+$$
+将后两项组合，有
+$$
+\frac{\partial\boldsymbol{u}}{\partial\delta\boldsymbol{\xi}}=\begin{bmatrix}\frac{f_x}{Z}&0&-\frac{f_xX}{Z^2}&-\frac{f_xXY}{Z^2}&f_x+\frac{f_xX^2}{Z^2}&-\frac{f_xY}{Z}\\0&\frac{f_y}{Z}&-\frac{f_yY}{Z^2}&-f_y-\frac{f_yY^2}{Z^2}&\frac{f_yXY}{Z^2}&\frac{f_yX}{Z}\end{bmatrix} \\
+J=-\frac{\partial\boldsymbol{I}_2}{\partial\boldsymbol{u}}\frac{\partial\boldsymbol{u}}{\partial\delta\boldsymbol{\xi}} 
+$$
+
+
+## 4.9 后端优化 建图
+重述运动方程与观测方程，
+$$
+\begin{cases}\boldsymbol{x}_k=f\left(\boldsymbol{x}_{k-1},\boldsymbol{u}_k\right)+\boldsymbol{w}_k\\\boldsymbol{z}_{k,j}=h\left(\boldsymbol{y}_j,\boldsymbol{x}_k\right)+\boldsymbol{v}_{k,j}&\end{cases}\quad k=1,\ldots,N,j=1,\ldots,M
+$$
+假设，令$x_k$为k时刻的所有未知量，包含了当前相机的位姿与m个路标点，
+$$
+\boldsymbol{x}_k\overset{\mathrm{def}}{\operatorname*{\operatorname*{=}}}\{\boldsymbol{x}_k,\boldsymbol{y}_1,\ldots,\boldsymbol{y}_m\}
+$$
+则有
+$$
+\begin{cases}\boldsymbol{x}_k=f\left(\boldsymbol{x}_{k-1},\boldsymbol{u}_k\right)+\boldsymbol{w}_k\\\boldsymbol{z}_k=h\left(\boldsymbol{x}_k\right)+\boldsymbol{v}_k&\end{cases}
+$$
+我们希望用过去0到k时刻的数据估计现在的概率分布，
+$$
+P(x_k|x_0,u_{1:k},z_{1:k})
+$$
+将$z_k$与$x_k$交换位置，
+$$
+P\left(\boldsymbol{x}_k|\boldsymbol{x}_0,\boldsymbol{u}_{1:k},\boldsymbol{z}_{1:k}\right)\propto P\left(\boldsymbol{z}_k|\boldsymbol{x}_k\right)P\left(\boldsymbol{x}_k|\boldsymbol{x}_0,\boldsymbol{u}_{1:k},\boldsymbol{z}_{1:k-1}\right)
+$$
+在$x_{k-1}$时刻展开
+$$
+P\left(\boldsymbol{x}_k|\boldsymbol{x}_0,\boldsymbol{u}_{1:k},\boldsymbol{z}_{1:k-1}\right)=\int P\left(\boldsymbol{x}_k|\boldsymbol{x}_{k-1},\boldsymbol{x}_0,\boldsymbol{u}_{1:k},\boldsymbol{z}_{1:k-1}\right)P\left(\boldsymbol{x}_{k-1}|\boldsymbol{x}_0,\boldsymbol{u}_{1:k},\boldsymbol{z}_{1:k-1}\right)\mathrm{d}\boldsymbol{x}_{k-1}
+$$
+对于每次观测，有误差
+$$
+e=z-h(T,p)
+$$
+则多个观测量下，整体的代价函数为，
+$$
+\frac{1}{2}\sum_{i=1}^m\sum_{j=1}^n\|\boldsymbol{e}_{ij}\|^2=\frac{1}{2}\sum_{i=1}^m\sum_{j=1}^n\|\boldsymbol{z}_{ij}-h(\boldsymbol{T}_i,\boldsymbol{p}_j)\|^2
+$$
+针对整体的代价函数，定义自变量为
+$$
+\boldsymbol{x}=[T_1,\ldots,T_m,\boldsymbol{p}_1,\ldots,\boldsymbol{p}_n]^\mathrm{T}
+$$
+则目标函数为，
+$$
+\frac{1}{2}\left\|f(\boldsymbol{x}+\Delta\boldsymbol{x})\right\|^2\approx\frac{1}{2}\sum_{i=1}^m\sum_{j=1}^n\left\|\boldsymbol{e}_{ij}+\boldsymbol{F}_{ij}\Delta\boldsymbol{\xi}_i+\boldsymbol{E}_{ij}\Delta\boldsymbol{p}_j\right\|^2
+$$
+将位姿变量放在一起，空间点的变量也放在一起，
+$$
+\boldsymbol{x}_\mathrm{c}=[\boldsymbol{\xi}_1,\boldsymbol{\xi}_2,\ldots,\boldsymbol{\xi}_m]^\mathrm{T}\in\mathbb{R}^{6m} \\
+\boldsymbol{x}_p=[\boldsymbol{p}_1,\boldsymbol{p}_2,\ldots,\boldsymbol{p}_n]^\mathrm{T}\in\mathbb{R}^{3n}
+$$
+则目标函数为
+$$
+\frac{1}{2}\left\|f(\boldsymbol{x}+\Delta\boldsymbol{x})\right\|^2=\frac{1}{2}\left\|\boldsymbol{e}+\boldsymbol{F}\Delta\boldsymbol{x}_c+\boldsymbol{E}\Delta\boldsymbol{x}_p\right\|^2
+$$
+此时J为
+$$
+J=[F & E]
+$$
+因为雅可比矩阵非常大，所以针对其性质做数学上的变化。
+$$
+H=J^\mathrm{T}J=\begin{bmatrix}F^\mathrm{T}F&F^\mathrm{T}E\\\\E^\mathrm{T}F&E^\mathrm{T}E\end{bmatrix}
+$$
+在图论中，以点与与边形成的邻接矩阵与H阵表现一致。 \
+于是得到线性方程组，
+$$
+\begin{bmatrix}B&E\\E^\mathrm{T}&C\end{bmatrix}\begin{bmatrix}\Delta x_\mathrm{c}\\\\\Delta x_p\end{bmatrix}=\begin{bmatrix}v\\\\w\end{bmatrix}
+$$
+将E消去，
+$$
+\begin{bmatrix}I&-EC^{-1}\\\\0&I\end{bmatrix}\begin{bmatrix}B&E\\\\E^{\mathrm{T}}&C\end{bmatrix}\begin{bmatrix}\Delta x_\mathrm{c}\\\\\Delta x_p\end{bmatrix}=\begin{bmatrix}I&-EC^{-1}\\\\0&I\end{bmatrix}\begin{bmatrix}v\\\\w\end{bmatrix}
+$$
+整理，得
+$$
+\begin{bmatrix}B-EC^{-1}E^\mathrm{T}&0\\\\E^\mathrm{T}&C\end{bmatrix}\begin{bmatrix}\Delta x_\mathrm{c}\\\\\Delta x_p\end{bmatrix}=\begin{bmatrix}v-EC^{-1}w\\\\w\end{bmatrix}
+$$
+则可以先固定位姿部分的增量方程：
+$$
+\begin{bmatrix}B-EC^{-1}E^\mathrm{T}\end{bmatrix}\Delta x_\mathrm{c}=v-EC^{-1}w
+$$
+随后，路标部分有
+$$
+\Delta\boldsymbol{x}_p=\boldsymbol{C}^{-1}(\boldsymbol{w}-\boldsymbol{E}^\mathrm{T}\Delta\boldsymbol{x}_\mathrm{c})
+$$
+实际上相当于
+$$
+P(\boldsymbol{x_\mathrm{c}},\boldsymbol{x_p})=P(\boldsymbol{x_\mathrm{c}}|\boldsymbol{x_p})P(\boldsymbol{x_p})
+$$
+
+## 4.9 滑动窗口优化 建图
+$$
+p\left(\boldsymbol{x}_1,\ldots\boldsymbol{x}_4,\boldsymbol{y}_1,\ldots\boldsymbol{y}_6\right)=p\left(\boldsymbol{x}_2,\ldots,\boldsymbol{x}_4,\boldsymbol{y}_1,\ldots\boldsymbol{y}_6|\boldsymbol{x}_1\right)\underbrace{p\left(\boldsymbol{x}_1\right)}_{\text{舍去}}
+$$
+则可优化为
+$$
+\Delta\boldsymbol{\xi}_{ij}=\boldsymbol{\xi}_i^{-1}\circ\boldsymbol{\xi}_j=\ln\left(\boldsymbol{T}_i^{-1}\boldsymbol{T}_j\right)^\vee
+$$
+则误差方程为
+$$
+e_{ij}=\Delta\xi_{ij}\ln\left(T_{ij}^{-1}T_{i}^{-1}T_{j}\right)^{\vee}
+$$
+通过叽里咕噜的转换，得到
+$$
+\begin{aligned}\hat{e}_{ij}&=\ln\left(\boldsymbol{T}_{ij}^{-1}\boldsymbol{T}_i^{-1}\exp((-\boldsymbol{\delta}\boldsymbol{\xi}_i)^{\wedge})\exp(\delta\boldsymbol{\xi}_j^{\wedge})\boldsymbol{T}_j\right)^{\vee}\\&=\ln\left(T_{ij}^{-1}T_{i}^{-1}T_{j}\exp\left(\left(-\mathrm{Ad}(T_{j}^{-1})\delta\xi_{i}\right)^{\wedge}\right)\exp\left(\left(\mathrm{Ad}(T_{j}^{-1})\delta\xi_{j}\right)^{\wedge}\right)\right)^{\vee}\\&\approx\ln\left(\boldsymbol{T}_{ij}^{-1}\boldsymbol{T}_i^{-1}\boldsymbol{T}_j\left[\boldsymbol{I}-(\mathrm{Ad}(\boldsymbol{T}_j^{-1})\boldsymbol{\delta}\boldsymbol{\xi}_i)^{\wedge}+(\mathrm{Ad}(\boldsymbol{T}_j^{-1})\boldsymbol{\delta}\boldsymbol{\xi}_j)^{\wedge}\right]\right)^\vee\\&\approx\boldsymbol{e}_{ij}+\frac{\partial\boldsymbol{e}_{ij}}{\partial\boldsymbol{\delta}\boldsymbol{\xi}_{i}}\boldsymbol{\delta}\boldsymbol{\xi}_{i}+\frac{\partial\boldsymbol{e}_{ij}}{\partial\boldsymbol{\delta}\boldsymbol{\xi}_{i}}\boldsymbol{\delta}\boldsymbol{\xi}_{j}\end{aligned} \\
+\frac{\partial\boldsymbol{e}_{ij}}{\partial\boldsymbol{\delta\xi}_i}=-\boldsymbol{J}_r^{-1}(\boldsymbol{e}_{ij})\mathrm{Ad}(\boldsymbol{T}_j^{-1}) \\
+\frac{\partial\boldsymbol{e}_{ij}}{\partial\boldsymbol{\delta}\boldsymbol{\xi}_{i}}=\boldsymbol{J}_{r}^{-1}(\boldsymbol{e}_{ij})\mathrm{Ad}(\boldsymbol{T}_{j}^{-1}) \\
+\mathcal{J}_r^{-1}(e_{ij})\approx I+\frac{1}{2}\begin{bmatrix}\phi_e^\wedge&\rho_e^\wedge\\0&\phi_e^\wedge\end{bmatrix}
+$$
+总体的目标函数为
+$$
+\min\frac{1}{2}\sum_{i,j\in\mathcal{E}}e_{ij}^\mathrm{T}\Sigma_{ij}^{-1}e_{ij}
+$$
+
+## 4.10 回环检测 建图
+如何在仅有视觉信息的情况下，知道当初曾经来过这个地方？
+我们使用单词组成的向量去描述一个图像，当判断两个图像的向量相似，则认为检测到了回环。
+$$
+s\left(\boldsymbol{a},\boldsymbol{b}\right)=1-\frac{1}{W}\left\|\boldsymbol{a}-\boldsymbol{b}\right\|_1
+$$
+### 4.10.1 生成词袋 机器学习方法 无监督学习 (无监督学习聚类的方法很多，为啥选择K-means)
+使用K叉树生成字典。
+
+### 4.10.2 检测回环
+
+
+### 4.10.3 回环校正
+
+
 
 
 ## 5.  融合技术
