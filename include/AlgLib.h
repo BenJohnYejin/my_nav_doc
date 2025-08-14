@@ -1,13 +1,14 @@
 /**
  * @file AlgLib.h
  * @brief Alignment and Navigation Library - Core Data Structures and Algorithms
- * @author Yejin 
+ * @author LEADOR PPOI Team - Yejin 
  * @date 2025
  * @version 1.0
  * @copyright Copyright (c) 2020-2025 PPOI_Nav Project
- *                          PSINS: A C++ Inertial Navigation Library, https://psins.org.cn/
+ *                          yejin  yejinbenjohn@qq.com
+ *                          liuhuichao 
  *
- * @mainpage Navigation Library
+ * @mainpage PPOI_Nav Alignment and Navigation Library
  * @section intro_sec Introduction
  * This header defines the core mathematical and navigation-related classes and functions
  * used in the PPOI_Nav navigation and sensor fusion system. It includes matrix, vector,
@@ -64,12 +65,15 @@
 #define AlignLib_Header
 
 #include <stdlib.h>
+#include "NavCostant.h"
 #include "AppConfigPara.h"
 
 extern vect3 O31;
 extern vect3 One31;
 extern mat3 I33;
 extern quat qI;
+
+//midmsg_t midmsg_[MAXDIFOBS * 2];
 
 /**
  * @class mat3
@@ -2503,6 +2507,144 @@ public:
     void SetGNSSFixMode(int mode = 0);
 };
 
+#ifdef MEMORY
+#include <malloc.h>
+/* RingMemory class implementation ---------------------------------------------
+* Implements a circular buffer for storing fixed-size records.
+* Provides constructors for default initialization, memory allocation,
+* and using an external memory buffer. Supports push and pop operations
+* with automatic wrap-around and overwrite of oldest data when full.
+* Methods:
+*   - RingMemory(void): Default constructor, initializes pointers to NULL.
+*   - RingMemory(long recordNum, int recordLen0): Allocates memory for the buffer.
+*   - RingMemory(uint8_t *pMem, long memLen0, int recordLen0): Uses external memory.
+*   - ~RingMemory(): Destructor, frees allocated memory if owned.
+*   - uint8_t pop(uint8_t *p): Pops one record from the buffer.
+*   - uint8_t* get(int iframe): Gets pointer to the specified frame.
+*   - uint8_t* set(int iframe, const uint8_t *p): Sets data for the specified frame.
+*   - uint8_t push(const uint8_t *p): Pushes one record into the buffer.
+*-----------------------------------------------------------------------------*/
+#define MAX_RECORD_BYTES 1024
+class RingMemory
+{
+public:
+    uint8_t* pMemStart0;         /*< Pointer to the original start of the memory buffer */
+    uint8_t* pMemStart;          /*< Pointer to the start of the usable memory buffer */
+    uint8_t* pMemEnd;            /*< Pointer to the end of the memory buffer */
+    int pushLen;                 /*< Length of data to push (bytes) */
+    int popLen;                  /*< Length of data to pop (bytes) */
+    int recordLen;               /*< Length of each record (bytes) */
+    long memLen;                 /*< Total length of the memory buffer (bytes) */
+    long dataLen;                /*< Current length of valid data in the buffer (bytes) */
+    uint8_t* pMemPush;           /*< Pointer to the current push position in the buffer */
+    uint8_t* pMemPop;            /*< Pointer to the current pop position in the buffer */
+    uint8_t pushBuf[MAX_RECORD_BYTES]; /*< Temporary buffer for pushing data */
+    uint8_t popBuf[MAX_RECORD_BYTES];  /*< Temporary buffer for popping data */
+
+    /* default constructor --------------------------------------------------------
+    * initialize pointers and buffer to NULL/zero
+    * args   : none
+    * return : none
+    *-----------------------------------------------------------------------------*/
+    RingMemory(void);
+
+    /* allocate memory for the buffer ---------------------------------------------
+    * allocate internal memory for a given number of records
+    * args   : long       recordNum   I   number of records
+    *          int        recordLen0  I   length of each record (bytes)
+    * return : none
+    *-----------------------------------------------------------------------------*/
+    RingMemory(long recordNum, int recordLen0);
+
+    /* use external memory buffer -------------------------------------------------
+    * initialize with an external memory buffer
+    * args   : uint8_t*   pMem        I   pointer to external memory
+    *          long       memLen0     I   length of memory (bytes)
+    *          int        recordLen0  I   length of each record (bytes, default: 0)
+    * return : none
+    *-----------------------------------------------------------------------------*/
+    RingMemory(uint8_t* pMem, long memLen0, int recordLen0 = 0);
+
+    /* destructor -----------------------------------------------------------------
+    * free allocated memory if owned
+    * args   : none
+    * return : none
+    *-----------------------------------------------------------------------------*/
+    ~RingMemory();
+
+    /* push one record into the buffer --------------------------------------------
+    * push a record into the circular buffer, overwrite oldest if full
+    * args   : const uint8_t* p   I   pointer to data (default: NULL)
+    * return : status (1: success, 0: failure)
+    *-----------------------------------------------------------------------------*/
+    uint8_t push(const uint8_t* p = (const uint8_t*)NULL);
+
+    /* pop one record from the buffer ---------------------------------------------
+    * pop a record from the circular buffer
+    * args   : uint8_t*   p       O   pointer to output buffer (default: NULL)
+    * return : status (1: success, 0: failure)
+    *-----------------------------------------------------------------------------*/
+    uint8_t pop(uint8_t* p = (uint8_t*)NULL);
+
+    /* get pointer to specified frame ---------------------------------------------
+    * get pointer to the specified frame in the buffer
+    * args   : int        iframe  I   frame index
+    * return : pointer to frame data
+    *-----------------------------------------------------------------------------*/
+    uint8_t* get(int iframe);
+
+    /* set data for specified frame -----------------------------------------------
+    * set data for the specified frame in the buffer
+    * args   : int        iframe  I   frame index
+    *          const uint8_t* p   I   pointer to data
+    * return : pointer to frame data
+    *-----------------------------------------------------------------------------*/
+    uint8_t* set(int iframe, const uint8_t* p);
+};
+
+/* Smooth class implementation ------------------------------------------------
+* Implements a moving average (sliding window) filter for vector data.
+* Uses a RingMemory buffer to store recent vectors and efficiently
+* computes the mean as new data arrives.
+* Methods:
+*   - Smooth(int clm, int row): Constructor, initializes buffer and accumulators.
+*   - ~Smooth(): Destructor, releases buffer memory.
+*   - vect Update(const double *p, double *pmean): Updates the filter with new data,
+*     computes and returns the current mean.
+*-----------------------------------------------------------------------------*/
+class SmoothAVP
+{
+public:
+    RingMemory* pmem;    /*< Pointer to the ring memory buffer for storing recent vectors */
+    vect sum;            /*< Sum of vectors in the current window */
+    vect mean;           /*< Mean vector of the current window */
+    vect tmp;            /*< Temporary vector for intermediate calculations */
+    int irow;            /*< Current row index in the buffer */
+    int maxrow;          /*< Maximum number of rows (window size) */
+    /* constructor ---------------------------------------------------------------
+    * initialize the moving average filter with buffer size
+    * args   : int        clm     I   number of columns (vector dimension, default: MAX_MAT_DIM)
+    *          int        row     I   window size (default: 100)
+    * return : none
+    *-----------------------------------------------------------------------------*/
+    SmoothAVP(int clm = MAX_MAT_DIM, int row = 100);
+
+    /* destructor -----------------------------------------------------------------
+    * release buffer memory
+    * args   : none
+    * return : none
+    *-----------------------------------------------------------------------------*/
+    ~SmoothAVP();
+
+    /* update the filter with new data --------------------------------------------
+    * add new vector data, update sum and mean, return current mean
+    * args   : const double* p    I   pointer to new data
+    *          double*       pmean O   pointer to output mean (optional)
+    * return : current mean vector
+    *-----------------------------------------------------------------------------*/
+    vect Update(const double* p, double* pmean = NULL);
+};
+#endif
 
 #ifdef FILEIO
 #include <stdio.h>
@@ -3457,6 +3599,14 @@ double norm1(const double* pd, int n);
 *          int         n       I   number of elements in the array
 * return : Euclidean norm of the array
 *-----------------------------------------------------------------------------*/
+double norm(const float* pd, int n);
+
+/* calculate Euclidean norm of an array ---------------------------------------
+* calculate the Euclidean norm of an array
+* args   : const double* pd    I   pointer to the array
+*          int         n       I   number of elements in the array
+* return : Euclidean norm of the array
+*-----------------------------------------------------------------------------*/
 double norm(const double* pd, int n);
 
 /* calculate infinity norm of an array ----------------------------------------
@@ -3523,8 +3673,66 @@ void fusion(vect3& x1, vect3& p1, const vect3 x2, const vect3 p2);
 *-----------------------------------------------------------------------------*/
 void fusion(vect3& x1, vect3& p1, const vect3 x2, const vect3 p2, vect3& xf, vect3& pf);
 
-
-slot number (NULL: no output)
+/* sort and unique observation data --------------------------------------------
+* Sort observation data by time, receiver, and satellite, and remove duplicates.
+* args   : obs_t *obs    IO     observation data structure (obs_t)
+* return : int           O      number of unique epochs after sorting
+* notes  : Duplicates are removed, and invalid observations are filtered out.
+*-----------------------------------------------------------------------------*/
+int checkobs(obsd_t* obs);
+/* sort and unique observation data --------------------------------------------
+* sort and unique observation data by time, rcv, sat
+* args   : obs_t *obs    IO     observation data
+* return : number of epochs
+*-----------------------------------------------------------------------------*/
+int  sortobs(obs_t* obs);
+/* unique ephemerides ----------------------------------------------------------
+* unique ephemerides in navigation data and update carrier wave length
+* args   : nav_t *nav    IO     navigation data
+* return : number of epochs
+*-----------------------------------------------------------------------------*/
+void uniqnav(nav_t* nav);
+/* inner product ---------------------------------------------------------------
+* inner product of vectors
+* args   : double *a,*b     I   vector a,b (n x 1)
+*          int    n         I   size of vector a,b
+* return : a'*b
+*-----------------------------------------------------------------------------*/
+double dot(const double* a, const double* b, int n);
+/* outer product of 3d vectors -------------------------------------------------
+* outer product of 3d vectors
+* args   : double *a,*b     I   vector a,b (3 x 1)
+*          double *c        O   outer product (a x b) (3 x 1)
+* return : none
+*-----------------------------------------------------------------------------*/
+void cross3(const double* a, const double* b, double* c);
+/* normalize 3d vector ---------------------------------------------------------
+* normalize 3d vector
+* args   : double *a        I   vector a (3 x 1)
+*          double *b        O   normlized vector (3 x 1) || b || = 1
+* return : status (1:ok,0:error)
+*-----------------------------------------------------------------------------*/
+int normv3(const double* a, double* b);
+/* screen by time --------------------------------------------------------------
+* screening by time start, time end, and time interval
+* args   : gtime_t time  I      time
+*          gtime_t ts    I      time start (ts.time==0:no screening by ts)
+*          gtime_t te    I      time end   (te.time==0:no screening by te)
+*          double  tint  I      time interval (s) (0.0:no screen by tint)
+* return : 1:on condition, 0:not on condition
+*-----------------------------------------------------------------------------*/
+int  screent(gtime_t time, gtime_t ts, gtime_t te, double tint);
+/* satellite system+prn/slot number to satellite number ------------------------
+* convert satellite system+prn/slot number to satellite number
+* args   : int    sys       I   satellite system (SYS_GPS,SYS_GLO,...)
+*          int    prn       I   satellite prn/slot number
+* return : satellite number (0:error)
+*-----------------------------------------------------------------------------*/
+int  satno(int sys, int prn);
+/* satellite number to satellite system ----------------------------------------
+* convert satellite number to satellite system
+* args   : int    sat       I   satellite number (1-MAXSAT)
+*          int    *prn      IO  satellite prn/slot number (NULL: no output)
 * return : satellite system (SYS_GPS,SYS_GLO,...)
 *-----------------------------------------------------------------------------*/
 int  satsys(int sat, int* prn);
@@ -3535,6 +3743,16 @@ int  satsys(int sat, int* prn);
 * notes  : 120-138 and 193-195 are also recognized as sbas and qzss
 *-----------------------------------------------------------------------------*/
 int  satid2no(const char* id);
+/* convert satellite id string to satellite system -----------------------------
+* Convert a satellite id string to its corresponding satellite system.
+* args   : const char* id   I   satellite id string (e.g., "G01", "C12", "R05", or "12")
+*          int* sys         O   satellite system (SYS_GPS, SYS_GLO, SYS_GAL, SYS_QZS, SYS_CMP, etc.)
+* return : none
+* notes  : The function first tries to parse the id as a pure number (PRN), and assigns
+*          the system based on PRN ranges. If that fails, it parses as a character code
+*          followed by PRN (e.g., 'G' for GPS, 'R' for GLONASS, etc.).
+*-----------------------------------------------------------------------------*/
+void satid2sys(const char* id, int* sys);
 /* satellite number to satellite id --------------------------------------------
 * convert satellite number to satellite id
 * args   : int    sat       I   satellite number
@@ -3613,7 +3831,7 @@ int  getcodepri(int sys, unsigned char code, const char* opt);
 *          prcopt_t *opt    I   processing options (NULL: not used)
 * return : status (1:excluded,0:not excluded)
 *-----------------------------------------------------------------------------*/
-int satexclude(int sat, int svh, int* exsats, int navsys);
+int satexclude(int sat, int svh, const prcopt_t* opt);
 /* test SNR mask ---------------------------------------------------------------
 * test SNR mask
 * args   : int    base      I   rover or base-station (0:rover,1:base station)
@@ -3623,7 +3841,10 @@ int satexclude(int sat, int svh, int* exsats, int navsys);
 *          snrmask_t *mask  I   SNR mask
 * return : status (1:masked,0:unmasked)
 *-----------------------------------------------------------------------------*/
-int  testsnr(int base, int freq, double el, double snr, const snrmask_t* mask);
+int testsnr(int base, int freq, double el, double snr, const int flag, const float snrthres);
+
+
+int limitcmpgeo(int sat);
 /* string to number ------------------------------------------------------------
 * convert substring in string to number
 * args   : char   *s        I   string ("... nnn.nnn ...")
@@ -3778,6 +3999,12 @@ double  utc2gmst(gtime_t t, double ut1_utc);
 *          (3) The date and time should be descending order.
 *-----------------------------------------------------------------------------*/
 int read_leaps(const char* file);
+/* adjust gps week number ------------------------------------------------------
+* adjust gps week number using cpu time
+* args   : int   week       I   not-adjusted gps week number
+* return : adjusted gps week number
+*-----------------------------------------------------------------------------*/
+int adjgpsweek(int week);
 /* new matrix ------------------------------------------------------------------
 * allocate memory of matrix
 * args   : int    n,m       I   number of rows and columns of matrix
@@ -3834,8 +4061,7 @@ void matcpy(double* A, const double* B, int n, int m);
 *          double *C        IO matrix C (n x k)
 * return : none
 *-----------------------------------------------------------------------------*/
-void matmul(const char* tr, int n, int k, int m, double alpha,
-    const double* A, const double* B, double beta, double* C);
+void matmul(const char* tr, int n, int k, int m, double alpha, const double* A, const double* B, double beta, double* C);
 /* inverse of matrix -----------------------------------------------------------
 * inverse of matrix (A=A^-1)
 * args   : double *A        IO  matrix (n x n)
@@ -3928,7 +4154,7 @@ double satwavelen(int sat, int frq, const nav_t* nav);
 *                               (0.0<=azel[0]<2*pi,-pi/2<=azel[1]<=pi/2)
 * return : elevation angle (rad)
 *-----------------------------------------------------------------------------*/
-double satazel(const double* pos, const double* e, float* azel);
+double satazel(const double* pos, const double* e, double* azel);
 /* geometric distance ----------------------------------------------------------
 * compute geometric distance and receiver-to-satellite unit vector
 * args   : double *rs       I   satellilte position (ecef at transmission) (m)
@@ -3948,6 +4174,8 @@ double geodist(const double* rs, const double* rr, double* e);
 * notes  : dop[0]-[3] return 0 in case of dop computation error
 *-----------------------------------------------------------------------------*/
 void dops(int ns, const double* azel, double elmin, double* dop);
+
+void dops_dif(int ns, const double* azel, double elmin, double* dop, const int* vsat);
 /* ionosphere model ------------------------------------------------------------
 * compute ionospheric delay by broadcast ionosphere model (klobuchar model)
 * args   : gtime_t t        I   time (gpst)
@@ -3956,7 +4184,7 @@ void dops(int ns, const double* azel, double elmin, double* dop);
 *          double *azel     I   azimuth/elevation angle {az,el} (rad)
 * return : ionospheric delay (L1) (m)
 *-----------------------------------------------------------------------------*/
-double ionmodel(gtime_t t, const float* ion, const double* pos, const float* azel);
+double ionmodel(gtime_t t, const double* ion, const double* pos, const double* azel);
 /* ionosphere mapping function -------------------------------------------------
 * compute ionospheric delay mapping function by single layer model
 * args   : double *pos      I   receiver position {lat,lon,h} (rad,m)
@@ -3984,7 +4212,7 @@ double ionppp(const double* pos, const double* azel, double re, double hion, dou
 *          double humi      I   relative humidity
 * return : tropospheric delay (m)
 *-----------------------------------------------------------------------------*/
-double tropmodel(gtime_t time, const vect3 pos, const float* azel, double humi);
+double tropmodel(gtime_t time, const vect3 pos, const double* azel, double humi);
 /* troposphere mapping function ------------------------------------------------
 * compute tropospheric mapping function by NMF
 * args   : gtime_t t        I   time
@@ -4010,7 +4238,7 @@ double tropmapf(gtime_t time, const double* pos, const double* azel, double* map
 *          double *var      O   ionospheric delay (L1) variance (m^2)
 * return : status(1:ok,0:error)
 *-----------------------------------------------------------------------------*/
-extern int ionocorr(gtime_t time, const nav_t* nav, int sat, const double* pos, const float* azel, int ionoopt, double* ion, double* var);
+int ionocorr(gtime_t time, const nav_t* nav, int sat, const double* pos, const double* azel, int ionoopt, double* ion, double* var);
 /* tropospheric correction -----------------------------------------------------
 * compute tropospheric correction
 * args   : gtime_t time     I   time
@@ -4022,14 +4250,26 @@ extern int ionocorr(gtime_t time, const nav_t* nav, int sat, const double* pos, 
 *          double *var      O   tropospheric delay variance (m^2)
 * return : status(1:ok,0:error)
 *-----------------------------------------------------------------------------*/
-extern int tropcorr(gtime_t time, const nav_t* nav, const double* pos, const float* azel, int tropopt, double* trp, double* var);
+int tropcorr(gtime_t time, const nav_t* nav, const double* pos, const double* azel, int tropopt, double* trp, double* var);
+/* set selected satellite ephemeris --------------------------------------------
+* Set selected satellite ephemeris for multiple ones like LNAV - CNAV, I/NAV -
+* F/NAV. Call it before calling satpos(),satposs() to use unselected one.
+* args   : int    sys       I   satellite system (SYS_???)
+*          int    sel       I   selection of ephemeris
+*                                 GPS,QZS : 0:LNAV ,1:CNAV  (default: LNAV)
+*                                 GAL     : 0:I/NAV,1:F/NAV (default: I/NAV)
+*                                 others  : undefined
+* return : none
+* notes  : default ephemeris selection for galileo is any.
+*-----------------------------------------------------------------------------*/
+void setseleph(int sys, int sel);
 /* get selected satellite ephemeris -------------------------------------------
 * Get the selected satellite ephemeris.
 * args   : int    sys       I   satellite system (SYS_???)
 * return : selected ephemeris
 *            refer setseleph()
 *-----------------------------------------------------------------------------*/
-extern int getseleph(int sys);
+int getseleph(int sys);
 /* broadcast ephemeris to satellite clock bias ---------------------------------
 * compute satellite clock bias with broadcast ephemeris (gps, galileo, qzss)
 * args   : gtime_t time     I   time by satellite clock (gpst)
@@ -4038,7 +4278,7 @@ extern int getseleph(int sys);
 * notes  : see ref [1],[7],[8]
 *          satellite clock does not include relativity correction and tdg
 *-----------------------------------------------------------------------------*/
-extern double eph2clk(gtime_t time, const eph_t* eph);
+double eph2clk(gtime_t time, const eph_t* eph);
 /* broadcast ephemeris to satellite position and clock bias --------------------
 * compute satellite position and clock bias with broadcast ephemeris (gps,
 * galileo, qzss)
@@ -4052,15 +4292,7 @@ extern double eph2clk(gtime_t time, const eph_t* eph);
 *          satellite clock includes relativity correction without code bias
 *          (tgd or bgd)
 *-----------------------------------------------------------------------------*/
-extern double geph2clk(gtime_t time, const geph_t* geph);
-/* sbas ephemeris to satellite clock bias --------------------------------------
-* compute satellite clock bias with sbas ephemeris
-* args   : gtime_t time     I   time by satellite clock (gpst)
-*          seph_t *seph     I   sbas ephemeris
-* return : satellite clock bias (s)
-* notes  : see ref [3]
-*-----------------------------------------------------------------------------*/
-extern double seph2clk(gtime_t time, const seph_t* seph);
+double geph2clk(gtime_t time, const geph_t* geph);
 /* broadcast ephemeris to satellite position and clock bias --------------------
 * compute satellite position and clock bias with broadcast ephemeris (gps,
 * galileo, qzss)
@@ -4074,7 +4306,7 @@ extern double seph2clk(gtime_t time, const seph_t* seph);
 *          satellite clock includes relativity correction without code bias
 *          (tgd or bgd)
 *-----------------------------------------------------------------------------*/
-extern void eph2pos(gtime_t time, const eph_t* eph, double* rs, float* dts, float* var);
+void eph2pos(gtime_t time, const eph_t* eph, double* rs, double* dts, double* var);
 /* glonass ephemeris to satellite position and clock bias ----------------------
 * compute satellite position and clock bias with glonass ephemeris
 * args   : gtime_t time     I   time (gpst)
@@ -4085,51 +4317,7 @@ extern void eph2pos(gtime_t time, const eph_t* eph, double* rs, float* dts, floa
 * return : none
 * notes  : see ref [2]
 *-----------------------------------------------------------------------------*/
-extern void geph2pos(gtime_t time, const geph_t* geph, double* rs, float* dts, float* var);
-/* sbas ephemeris to satellite position and clock bias -------------------------
-* compute satellite position and clock bias with sbas ephemeris
-* args   : gtime_t time     I   time (gpst)
-*          seph_t  *seph    I   sbas ephemeris
-*          double  *rs      O   satellite position {x,y,z} (ecef) (m)
-*          double  *dts     O   satellite clock bias (s)
-*          double  *var     O   satellite position and clock variance (m^2)
-* return : none
-* notes  : see ref [3]
-*-----------------------------------------------------------------------------*/
-extern void seph2pos(gtime_t time, const seph_t* seph, double* rs, double* dts, double* var);
-/* satellite position/clock by precise ephemeris/clock -------------------------
-* compute satellite position/clock with precise ephemeris/clock
-* args   : gtime_t time       I   time (gpst)
-*          int    sat         I   satellite number
-*          nav_t  *nav        I   navigation data
-*          int    opt         I   sat postion option
-*                                 (0: center of mass, 1: antenna phase center)
-*          double *rs         O   sat position and velocity (ecef)
-*                                 {x,y,z,vx,vy,vz} (m|m/s)
-*          double *dts        O   sat clock {bias,drift} (s|s/s)
-*          double *var        IO  sat position and clock error variance (m)
-*                                 (NULL: no output)
-* return : status (1:ok,0:error or data outage)
-* notes  : clock includes relativistic correction but does not contain code bias
-*          before calling the function, nav->peph, nav->ne, nav->pclk and
-*          nav->nc must be set by calling readsp3(), readrnx() or readrnxt()
-*          if precise clocks are not set, clocks in sp3 are used instead
-*-----------------------------------------------------------------------------*/
-extern int  peph2pos(gtime_t time, int sat, const nav_t* nav, int opt, double* rs, float* dts, float* var);
-/* satellite antenna phase center offset ---------------------------------------
-* compute satellite antenna phase center offset in ecef
-* args   : gtime_t time       I   time (gpst)
-*          double *rs         I   satellite position and velocity (ecef)
-*                                 {x,y,z,vx,vy,vz} (m|m/s)
-*          int    sat         I   satellite number
-*          nav_t  *nav        I   navigation data
-*          double *dant       I   satellite antenna phase center offset (ecef)
-*                                 {dx,dy,dz} (m) (iono-free LC value)
-* return : none
-*-----------------------------------------------------------------------------*/
-extern void satantoff(gtime_t time, const double* rs, int sat, const nav_t* nav, double* dant);
-
-
+void geph2pos(gtime_t time, const geph_t* geph, double* rs, double* dts, double* var);
 /* broadcast ephemeris to satellite clock bias ---------------------------------
 * compute satellite clock bias using broadcast ephemeris (GPS, Galileo, QZSS)
 * args   : gtime_t time     I   time at which to compute clock bias (gpst)
@@ -4142,9 +4330,8 @@ extern void satantoff(gtime_t time, const double* rs, int sat, const nav_t* nav,
 *   - Computes the satellite clock bias at the specified time using the broadcast ephemeris.
 *   - The result does not include relativity correction or code bias.
 *   - Returns 1 on success, 0 on failure (e.g., no valid ephemeris).
-*-----------------------------------------------------------------------------
 */
-extern int ephclk(gtime_t time, gtime_t teph, int sat, const nav_t* nav, float* dts);
+int ephclk(gtime_t time, gtime_t teph, int sat, const nav_t* nav, float* dts);
 /* satellite position and clock ------------------------------------------------
 * compute satellite position, velocity and clock
 * args   : gtime_t time     I   time (gpst)
@@ -4161,25 +4348,32 @@ extern int ephclk(gtime_t time, gtime_t teph, int sat, const nav_t* nav, float* 
 * notes  : satellite position is referenced to antenna phase center
 *          satellite clock does not include code bias correction (tgd or bgd)
 *-----------------------------------------------------------------------------*/
-extern int  satpos(gtime_t time, gtime_t teph, int sat, int ephopt, const nav_t* nav,
-    double* rs, float* dts, float* var, uint16_t* svh);
-
-/* read sp3 precise ephemeris file ---------------------------------------------
-* read sp3 precise ephemeris/clock files and set them to navigation data
-* args   : char   *file       I   sp3-c precise ephemeris file
-*                                 (wind-card * is expanded)
-*          nav_t  *nav        IO  navigation data
-*          int    opt         I   options (1: only observed + 2: only predicted +
-*                                 4: not combined)
+int  satpos(gtime_t time, gtime_t teph, int sat, int ephopt,	const nav_t* nav, double* rs, double* dts, double* var,	int* svh);
+/* satellite positions and clocks ----------------------------------------------
+* compute satellite positions, velocities and clocks
+* args   : gtime_t teph     I   time to select ephemeris (gpst)
+*          obsd_t *obs      I   observation data
+*          int    n         I   number of observation data
+*          nav_t  *nav      I   navigation data
+*          int    ephopt    I   ephemeris option (EPHOPT_???)
+*          double *rs       O   satellite positions and velocities (ecef)
+*          double *dts      O   satellite clocks
+*          double *var      O   sat position and clock error variances (m^2)
+*          int    *svh      O   sat health flag (-1:correction not available)
 * return : none
-* notes  : see ref [1]
-*          precise ephemeris is appended and combined
-*          nav->peph and nav->ne must by properly initialized before calling the
-*          function
-*          only files with extensions of .sp3, .SP3, .eph* and .EPH* are read
+* notes  : rs [(0:2)+i*6]= obs[i] sat position {x,y,z} (m)
+*          rs [(3:5)+i*6]= obs[i] sat velocity {vx,vy,vz} (m/s)
+*          dts[(0:1)+i*2]= obs[i] sat clock {bias,drift} (s|s/s)
+*          var[i]        = obs[i] sat position and clock error variance (m^2)
+*          svh[i]        = obs[i] sat health flag
+*          if no navigation data, set 0 to rs[], dts[], var[] and svh[]
+*          satellite position and clock are values at signal transmission time
+*          satellite position is referenced to antenna phase center
+*          satellite clock does not include code bias correction (tgd or bgd)
+*          any pseudorange and broadcast ephemeris are always needed to get
+*          signal transmission time
 *-----------------------------------------------------------------------------*/
-extern void readsp3(const char* file, nav_t* nav, int opt);
-
+void satposs(gtime_t time, const obsd_t* obs, int n, const nav_t* nav, int sateph, double* rs, double* dts, double* var, int* svh, int maxsizeofsvh);
 /* pseudorange measurement error variance ------------------------------------
 * Compute the variance of pseudorange measurement errors.
 * args   : const prcopt_t *opt I   processing options
@@ -4195,8 +4389,19 @@ extern void readsp3(const char* file, nav_t* nav, int opt);
 *       - SBAS: `EFACT_SBS`
 *   - For ionosphere-free combinations, an additional scaling factor is applied.
 *-----------------------------------------------------------------------------*/
-extern double varerr(int ionoopt, double el, int sys);
-
+double varerr_psr(int ionoopt, double el, int sys);
+/* least square estimation -----------------------------------------------------
+* least square estimation by solving normal equation (x=(A*A')^-1*A*y)
+* args   : double *A        I   transpose of (weighted) design matrix (n x m)
+*          double *y        I   (weighted) measurements (m x 1)
+*          int    n,m       I   number of parameters and measurements (n<=m)
+*          double *x        O   estmated parameters (n x 1)
+*          double *Q        O   esimated parameters covariance matrix (n x n)
+* return : status (0:ok,0>:error)
+* notes  : for weighted least square, replace A and y by A*w and w*y (w=W^(1/2))
+*          matirix stored by column-major order (fortran convention)
+*-----------------------------------------------------------------------------*/
+int lsq(const double* A, const double* y, int n, int m, double* x, double* Q);
 /* pseudorange with code bias correction -------------------------------------
 * Compute pseudorange with code bias correction.
 * args   : const obsd_t *obs  I   observation data for a single satellite
@@ -4216,46 +4421,129 @@ extern double varerr(int ionoopt, double el, int sys);
 *   - The function also handles Differential Code Biases (DCB) and Total Group
 *     Delay (TGD) corrections.
 *-----------------------------------------------------------------------------*/
-extern double prange(const obsd_t* obs, const nav_t* nav, const double* azel,
-    int iter, snrmask_t* mask, int ionoopt, double* var);
+double prange(const obsd_t* obs, const nav_t* nav, const double* azel, int iter, snrmask_t* mask, int ionoopt, double* var);
+/* single-point positioning ----------------------------------------------------
+* compute receiver position, velocity, clock bias by single-point positioning
+* with pseudorange and doppler observables
+* args   : obsd_t *obs      I   observation data
+*          int    n         I   number of observation data
+*          nav_t  *nav      I   navigation data
+*          prcopt_t *opt    I   processing options
+*          sol_t  *sol      IO  solution
+*          double *azel     IO  azimuth/elevation angle (rad) (NULL: no output)
+*          ssat_t *ssat     IO  satellite status              (NULL: no output)
+*          char   *msg      O   error message for error exit
+*		   int vof			I   Whether to estimate speed signs
+* return : status(1:ok,0:error)
+* notes  : assuming sbas-gps, galileo-gps, qzss-gps, compass-gps time offset and
+*          receiver bias are negligible (only involving glonass-gps time offset
+*          and receiver bias)
+*-----------------------------------------------------------------------------*/
+int pntpos(rtk_t* rtk, const obsd_t* obs, int n, const nav_t* nav, const prcopt_t* opt,sol_t* sol, double* azel, ssat_t* ssat);
 
-class KFAPP :public SINSGNSSBorad
-{
-public:
-    vect3 vnGNSS;          /*GNSS velocity in the navigation frame (east, north, up).*/
-    vect3 posGNSS;         /*GNSS position in the navigation frame (latitude, longitude, height).*/
-    vect3 accu_posGNSS;     /*GNSS position accuracy in the navigation frame (latitude, longitude, height).*/
+//extern int lambda(int n, int m, const double* a, const double* Q, double* F, double* s);
+///* standard positioning ------------------------------------------------------*/
+//
+//extern void rtkinit(rtk_t* rtk, const prcopt_t* opt);
+//extern void rtkfree(rtk_t* rtk);
+//extern int  rtkpos(rtk_t* rtk, const obsd_t* obs, int nobs, const nav_t* nav);
 
-    vect3 wmm_bias_align;   /*Estimated gyroscope bias for alignment.*/
-    vect3 vmm_bias_align;   /*Estimated accelerometer bias for alignment.*/
-
-    float yawGNSS;          /*GNSS yaw angle in radians.*/
-    float pos_dop_GNSS;     /*GNSS position dilution of precision (DOP).*/
-    float yaw_coast_align;  /*Yaw angle used for coast alignment.*/
-    float time_run;
-    uint16_t imu_cnt_ca;    /*IMU data counter for coast alignment.*/
-    uint16_t nav_type;      /*Navigation type (e.g., calibrate, navigation).*/
-    uint16_t yawGNSSType;   /*GNSS yaw type (e.g., true heading).*/
-    uint16_t fixtype_gnss;   /*GNSS fix type (e.g., single, float, fixed). */
-    uint16_t flag_rms_gnss;  /*Flag indicating the quality of GNSS RMS data. */
-    uint16_t flag_resver;   /*Flag res*/
-
-#ifdef LOW_PASS_IIR
-    IIRV3 IIR_wmm, IIR_vmm;
-#endif // LOW_PASS_IIR
-
-    KFAPP(int navType = NAV_TYPE);
-    int coast_align(KFAPP_Update* ptr_UpPara);
-    int para_init(KFAPP_ConfigPara* confdata, KFAPP_Update* updata);
-    int Update(KFAPP_Update* updata);
-    void SetMeas(void);
-
-private:
-    int get_static_bias(vect3 wmm, vect3 vmm);
-    double GNSS2Ali(double gnss_Ang, int type);
-    int check_GNSS_quality();
-};
-
+/* satellite position/clock by precise ephemeris/clock -------------------------
+* compute satellite position/clock with precise ephemeris/clock
+* args   : gtime_t time       I   time (gpst)
+*          int    sat         I   satellite number
+*          nav_t  *nav        I   navigation data
+*          int    opt         I   sat postion option
+*                                 (0: center of mass, 1: antenna phase center)
+*          double *rs         O   sat position and velocity (ecef)
+*                                 {x,y,z,vx,vy,vz} (m|m/s)
+*          double *dts        O   sat clock {bias,drift} (s|s/s)
+*          double *var        IO  sat position and clock error variance (m)
+*                                 (NULL: no output)
+* return : status (1:ok,0:error or data outage)
+* notes  : clock includes relativistic correction but does not contain code bias
+*          before calling the function, nav->peph, nav->ne, nav->pclk and
+*          nav->nc must be set by calling readsp3(), readrnx() or readrnxt()
+*          if precise clocks are not set, clocks in sp3 are used instead
+*-----------------------------------------------------------------------------*/
+extern int  peph2pos(gtime_t time, int sat, const nav_t* nav, int opt, double* rs, double* dts, double* var);
+/* satellite antenna phase center offset ---------------------------------------
+* compute satellite antenna phase center offset in ecef
+* args   : gtime_t time       I   time (gpst)
+*          double *rs         I   satellite position and velocity (ecef)
+*                                 {x,y,z,vx,vy,vz} (m|m/s)
+*          int    sat         I   satellite number
+*          nav_t  *nav        I   navigation data
+*          double *dant       I   satellite antenna phase center offset (ecef)
+*                                 {dx,dy,dz} (m) (iono-free LC value)
+* return : none
+*-----------------------------------------------------------------------------*/
+extern void satantoff(gtime_t time, const double* rs, int sat, const nav_t* nav, double* dant);
+/*in renix cpp*/
+/* read rinex header ---------------------------------------------------------
+* Read and decode the RINEX file header, extracting version, type, system, and observation types.
+* args   : FILE* fp       I   file pointer
+*          double* ver    O   RINEX version
+*          char* type     O   file type ('O', 'N', etc.)
+*          int* sys       O   satellite system
+*          int* tsys      O   time system
+*          char tobs[][MAXOBSTYPE][4] O   observation types per system
+*          nav_t* nav     IO  navigation data structure
+* return : 1 if header read successfully, 0 otherwise
+*-----------------------------------------------------------------------------*/
+extern int readrnxh(FILE* fp, double* ver, char* type, int* sys, int* tsys, char tobs[][MAXOBSTYPE][4], nav_t* nav);
+/* read rinex obs data body --------------------------------------------------
+* Read and decode the body of a RINEX observation file (all epochs and satellites).
+* args   : FILE* fp       I   file pointer
+*          const char* opt I  option string
+*          double ver     I   RINEX version
+*          int* tsys      IO  time system
+*          char tobs[][MAXOBSTYPE][4] I   observation types per system
+*          int* flag      O   epoch flag
+*          obsd_t* data   O   output observation data array
+*          int rcv        I   receiver index
+* return : number of observation records read, -1 on error
+*-----------------------------------------------------------------------------*/
+extern int readrnxobsb(FILE* fp, const char* opt, double ver, int* tsys, char tobs[][MAXOBSTYPE][4], int* flag, obsd_t* data, int rcv);
+/* read rinex file -----------------------------------------------------------
+* Read and decode a RINEX file (observation or navigation).
+* args   : FILE* fp       I   file pointer
+*          gtime_t ts     I   start time (0: no limit)
+*          gtime_t te     I   end time (0: no limit)
+*          double tint    I   time interval (0: no limit)
+*          const char* opt I  option string
+*          int flag       I   0: except for clock, 1: clock only
+*          int index      I   receiver index
+*          char* type     O   file type ('O', 'N', etc.)
+*          obs_t* obs     IO  observation data structure
+*          nav_t* nav     IO  navigation data structure
+* return : 1 if successful, 0 otherwise
+*-----------------------------------------------------------------------------*/
+extern int readrnxfp(FILE* fp, gtime_t ts, gtime_t te, double tint, const char* opt, int flag, int index, char* type, obs_t* obs, nav_t* nav);
+/* read sp3 precise ephemeris file ---------------------------------------------
+* read sp3 precise ephemeris/clock files and set them to navigation data
+* args   : char   *file       I   sp3-c precise ephemeris file
+*                                 (wind-card * is expanded)
+*          nav_t  *nav        IO  navigation data
+*          int    opt         I   options (1: only observed + 2: only predicted +
+*                                 4: not combined)
+* return : none
+* notes  : see ref [1]
+*          precise ephemeris is appended and combined
+*          nav->peph and nav->ne must by properly initialized before calling the
+*          function
+*          only files with extensions of .sp3, .SP3, .eph* and .EPH* are read
+*-----------------------------------------------------------------------------*/
+extern void readsp3(const char* file, nav_t* nav, int opt);
+extern void readpos(const char* file, const char* rcv, double* pos);
+extern int  readnav(const char* file, nav_t* nav);
+extern int  savenav(const char* file, const nav_t* nav);
+extern unsigned int getbitu(const unsigned char* buff, int pos, int len);
+extern int          getbits(const unsigned char* buff, int pos, int len);
+extern unsigned int rtk_crc24q(const unsigned char* buff, int len);
+extern int init_rtcm(rtcm_t* rtcm, prelock_t* prelock, int rcv, int staid);
+extern void free_rtcm(rtcm_t* rtcm);
+extern int input_rtcm3(rtcm_t* rtcm, unsigned char data);
 
 
 #endif

@@ -8,11 +8,10 @@
  * These parameters provide a unified interface and foundational support for modules such as navigation computation,
  * integrated positioning, observation data processing, and system modeling.
  *
- * @author  Yejin
+ * @author  LEADOR PPOI Team - Yejin
  * @date    2024-09-04
  * @version 1.0
  * @copyright Copyright (c) 2020-2025 PPOI_Nav Project
- *                          PSINS: A C++ Inertial Navigation Library, https://psins.org.cn/
  *
  * @mainpage PPOI_Nav Application Configuration Parameters
  * @section intro_sec Introduction
@@ -49,26 +48,40 @@
 #ifndef MYNAV_APPCONFIGPARA_H
 #define MYNAV_APPCONFIGPARA_H
 
-#include "NavCostant.h"
-
 #define CAL_TYPE   0x0        /*< Calibration mode identifier */
 #define NAV_TYPE   0x1        /*< Navigation mode identifier */
 
 #define MASK_MEAS  0377777    /*< Enable all measurements; use detailed macros for control */
-#define OD_ENABLE  0x01       /*< Disable odometer and virtual odometer */
+#define OD_ENABLE  0x00       /*< Disable odometer and virtual odometer */
 
 #define N_STEP     6          /*< Step size for filter or algorithm (e.g., (2*(nq+nr) +3) / 20 = 3.8 < N) */
 #define YAW_ALIGN  0.5        /*< Yaw alignment RMS in degrees */
 #define YAW_STD    5          /*< Yaw standard deviation in degrees */
 
-#define FS          100 
-#define TS          1.0/100    /*< Time step for IPOS3 serial (100Hz) */
-#define DT_POS     -0.00       /*< Position time delay compensation */
-#define DT_VEL     -0.00       /*< Velocity time delay compensation */
-#define DT_YAW     -0.00       /*< Yaw time delay compensation */
-#define DT_GNSS    -0.12       /*< GNSS time delay compensation */
 
- /* para will be */
+//#define IPOS_DZ               /*< Use old IMU DZ parameters */
+#ifdef IPOS_DZ
+	#define FS          200
+	#define TS          1.0/200    /*< Time step for DZ serial (125Hz) */
+	#define DT_POS     -0.20       /*< Position time delay compensation */
+	#define DT_VEL     -0.00       /*< Velocity time delay compensation */
+	#define DT_YAW     -0.20       /*< Yaw time delay compensation */
+	#define DT_GNSS    -0.12       /*< GNSS time delay compensation */
+	//#define DT_GNSS    -0.00       /*< GNSS time delay compensation */
+#endif
+
+#define IPOS_SER              /*< Use IPOS3 100Hz serial mode */
+#ifdef IPOS_SER
+	#define FS          100 
+	#define TS          1.0/100    /*< Time step for IPOS3 serial (100Hz) */
+	#define DT_POS     -0.00       /*< Position time delay compensation */
+	#define DT_VEL     -0.00       /*< Velocity time delay compensation */
+	#define DT_YAW     -0.00       /*< Yaw time delay compensation */
+	#define DT_GNSS    -0.12       /*< GNSS time delay compensation */
+	//#define DT_GNSS    -0.00       /*< GNSS time delay compensation */
+#endif
+
+
 #define FB_att_TAU     TS*1.0      /*< Attitude feedback time constant */
 #define FB_vel_TAU     TS*10.0     /*< Velocity feedback time constant */
 #define FB_pos_TAU     TS*10.0     /*< Position feedback time constant */
@@ -88,16 +101,63 @@
 
 #define Rt_yaw_gnss      0.5*DEG   /*< GNSS yaw measurement noise */
 
+#ifdef IPOS_DZ
+	#define MASK_MEAS    0377077    /*< Enable all measurements; use detailed macros for control */
+	#define RB_Init          INF    /*< Infinite value for constraints */
+	#define RB_Norm          0.5    /*< Infinite value for constraints */
+	#define YAW_ALIGN        5.0    /*< Yaw alignment RMS in degrees */
+
+	#define Qt_gyr_h        0.3*DPSH   /*< Horizontal gyro noise (deg/sqrt(hr)) */
+	#define Qt_gyr_v        0.8*DPSH   /*< Vertical gyro noise (deg/sqrt(hr)) */
+
+	#define Rt_yaw_gnss      5.0*DEG   /*< GNSS yaw measurement noise */
+	/* IPOSDZ 20250704*/
+#endif 
+
 #define AVPINUM     -int((DT_GNSS+DT_POS)*FS) + 1
 
-#define Qt_gyr_h        0.5*DPSH   /*< Horizontal gyro noise (deg/sqrt(hr)) */
-#define Qt_gyr_v        0.8*DPSH   /*< Vertical gyro noise (deg/sqrt(hr)) */
-#define Pk_eb_h      10.0*DPH     /*< Horizontal gyro bias initial covariance */
-#define Pk_eb_v      15.0*DPH     /*< Vertical gyro bias initial covariance */
-#define Pk_db_h       0.5*MG       /*< Horizontal accel bias initial covariance */
-#define Pk_db_v       0.8*MG       /*< Vertical accel bias initial covariance */
-#define RB_Init         INF     /*< Infinite value for constraints */
-#define RB_Norm         0.50       /*< Infinite value for constraints */
+
+#define IPOSDY_OLD            /*< Use old IMU DY parameters */
+//#define IPOS_BOSHI
+//#define IPOS3_CX
+//#define IPOSHS          
+
+//#define LOW_PASS_IIR        /*< Enable 10Hz IIR low-pass filter */
+#define LOST_ASUME          /*< Use speed & heading assumption when lost */
+//#define GNSS_CHECK_UBOX       /*< Enable GNSS check for  receiver */
+//#define GNSS_CHECK_UM482    /*< Enable GNSS check for UM482 receiver */
+//#define GNSS_CHECK_UM982    /*< Enable GNSS check for UM982 receiver */
+#define GNSS_CHECK_LG69T      /*< Enable GNSS check for LG69T receiver */
+
+
+#ifdef IPOS_BOSHI
+	#define Qt_gyr_h        0.8*DPSH   /*< Horizontal gyro noise (deg/sqrt(hr)) */
+	#define Qt_gyr_v        1.0*DPSH   /*< Vertical gyro noise (deg/sqrt(hr)) */
+	#define Pk_eb_h      10.0*DPH     /*< Horizontal gyro bias initial covariance */
+	#define Pk_eb_v      25.0*DPH     /*< Vertical gyro bias initial covariance */
+	#define RB_Init          INF       /*< Infinite value for constraints */
+	#define RB_Norm          0.5       /*< Infinite value for constraints */
+
+	#define Qt_acc_h     3000.0*UGPSHZ /*< Horizontal accel noise (ug/sqrt(Hz)) */
+	#define Qt_acc_v     5000.0*UGPSHZ /*< Vertical accel noise (ug/sqrt(Hz)) */
+#endif 
+
+#ifdef IPOSDY_OLD
+	#define Qt_gyr_h        0.8*DPSH   /*< Horizontal gyro noise (deg/sqrt(hr)) */
+	#define Qt_gyr_v        1.0*DPSH   /*< Vertical gyro noise (deg/sqrt(hr)) */
+	#define Pk_eb_h      10.0*DPH     /*< Horizontal gyro bias initial covariance */
+	#define Pk_eb_v      20.0*DPH     /*< Vertical gyro bias initial covariance */
+	#define RB_Init          INF      /*< Infinite value for constraints */
+	#define RB_Norm          0.80    /*< Infinite value for constraints */
+#endif
+
+#ifdef IPOS3_CX
+	#define RB_Init          INF       /*< Infinite value for constraints */
+	#define RB_Norm          0.5       /*< Infinite value for constraints */
+
+	#define Qt_gyr_h       0.8*DPSH   /*< Horizontal gyro noise (deg/sqrt(hr)) */
+	#define Qt_gyr_v       1.0*DPSH   /*< Vertical gyro noise (deg/sqrt(hr)) */
+#endif 
 
 
 #define Pk_att_h        60*MIN     /*< Horizontal attitude initial covariance */
@@ -191,105 +251,57 @@
 #define FB_gnss_yaw 5e-1*DEG   /*< GNSS yaw feedback gain */
 
 
-        
 typedef struct {
 	double t;              
 	double wm_x;           
-	double wm_y;           
+	double wm_y;          
 	double wm_z;           
 	double vm_x;           
 	double vm_y;          
-	double vm_z;           
-	double dS;             
-	double lat_gps;       
-	double lon_gps;        
-	double hgt_gps;       
+	double vm_z;          
+	double dS;            
+	double lat_gps;      
+	double lon_gps;       
+	double hgt_gps;      
 	double dop;           
-	double eastvel_gps;    
+	double eastvel_gps;   
 	double northvel_gps;   
 	double upvel_gps;      
 	double satnum;       
-	double None;          
-	double yaw;           
-	double yawrms;       
-	double lat_base;     
+	double None;        
+	double yaw;         
+	double yawrms;         
+	double lat_base;      
 	double lon_base;      
 	double hgt_base;     
-	double pitch_base;    
-	double roll_base;    
-	double yaw_base;      
+	double pitch_base;  
+	double roll_base;      
+	double yaw_base;     
 	double eastvel_base;  
-	double northvel_base; 
-	double uphvel_base;   
-	double hdop;           /*< GNSS HDOPֵ */
-	double std_lat;      
+	double northvel_base;  
+	double uphvel_base;    
+	double hdop;          
+	double std_lat;       
 	double std_lon;      
 	double std_hgt;     
 } sim32bin_t;
 
-
 typedef struct {
-	char simfile[128];     
-	char tracefile[128];  
-	char resfile[128];   
-	int  trace_lever;    
-	int  conf_od;         
-
-	double conf_lvGNSS_i; 
-	double conf_lvGNSS_j; 
-	double conf_lvGNSS_k; 
-	double conf_dyawGNSS;
-
-	double conf_lvOD_i;    
-	double conf_lvOD_j;   
-	double conf_lvOD_k;   
-	double conf_odKappa_i; 
-	double conf_odKappa_j;
-	double conf_odKappa_k;
-
-	double conf_GNSSAgle;  
+	char nav_file[128];    
+	char obs_file[128];   
+	char trace_file[128];   
+	char res_file[128];
+	int  trace_lever;
 } config_t;
-
 
 typedef struct {
 	const char* name;      
-	int format;            /*< �������ʽ (0:int,1:double,2:string,3:enum) */
-	void* var;             
-	const char* comment;   
+	int format;            
+	void* var;            
+	const char* comment;  
 } CONFIG_t;
 
 
-typedef struct KFAPP_ConfigPara {
-	float conf_lvGNSS_i;
-	float conf_lvGNSS_j;
-	float conf_lvGNSS_k;
-	float conf_dyawGNSS;
-	float conf_lvOD_i;
-	float conf_lvOD_j;
-	float conf_lvOD_k;
-	float conf_odKappa_i;
-	float conf_odKappa_j;
-	float conf_odKappa_k;
-	float conf_outputLV_i;
-	float conf_outputLV_j;
-	float conf_outputLV_k;
-
-	float conf_calieb_i;
-	float conf_calieb_j;
-	float conf_calieb_k;
-	float conf_GNSSAgle;
-
-	short conf_od;
-	short imu_cnt;
-	short ant_mode;
-}KFAPP_ConfigPara;
-
-typedef struct KFAPP_Update {
-	gnss_info gnss;
-	imu_info  imu;
-	odo_info  odo;
-	float yaw_align;
-}KFAPP_Update;
 
 
 #endif //MYNAV_APPCONFIGPARA_H
