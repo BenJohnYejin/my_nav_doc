@@ -519,7 +519,16 @@ $$
 注意延时。
 
 ### 1.9 长直线工况下航向漂移
-**参考文献**： 传递对准方案，
+**参考文献**： 传递对准方案，若只有航向漂移，可直接参考带有航向观测的状态。
+
+以主惯导计算参数代替子惯导的相关计算参数进行捷联解算，可得子惯导的姿态$\bold{C}^n_{b_S}$和速度$\bold{v}_S^n$更新方程，分别为
+$$
+\dot{C}_{b_{S}}=C_{b_{S}}\left(\omega_{a_{S}}^{b_{S}}\times\right)=C_{b_{S}}\left(\omega_{b_{S}}^{b_{S}}\times\right)-\left(\omega_{a_{N},M}^{n}\times\right)C_{b_{S}}^{n} \\
+\dot{\bold{v}}^{n}_S=C^{n}f^{b_{S}}-\left(2\omega_{F,M}^{n}+\omega_{m,M}^{n}\right)\times\nu_{M}^{n}+g_{M}^{n}
+$$
+其中，\bold{v}_M^n为主惯导速度；
+
+
 
 ## 2. GNSS定位基础与定位原理
 **本节内容主要参考并基于[RTKlib](https://www.rtklib.com/)开源GNSS算法库的框架构建（v2.4.3），重点说明关键模型实现细节。**
@@ -1091,6 +1100,12 @@ $$
 \boldsymbol{M}_{aa\mathrm{D}} = \boldsymbol{M}_{aa\mathrm{D}}^{\prime} + \boldsymbol{M}_{a\nu\mathrm{D}} (\boldsymbol{v}_{\mathrm{D}}^{n} \times) \\
 M_{ak\mathrm{D}}=M_{av\mathrm{D}}M_{\nu k\mathrm{D}}
 $$
+
+### 3.2.6 汇总
+
+
+
+
 
 ### 3.3 EKF-SLAM 算法推导与误差分析
 #### 3.3.1 状态空间定义
@@ -1700,12 +1715,12 @@ $$
 
 
 ## 5 基于kalman融合技术-算力受限的嵌入式上实现 穷哥们
-### 5.1 MEMS 车载 GNSS/INS 松组合导航方案
-MEMS 惯性传感器的误差特性复杂，在车载应用环境下，可利用的观测量（如 GNSS 位置/速度）相对有限，导致部分误差参数（如高阶随机过程参数）的可观测性较低，难以在线精确估计。因此，在状态量建模时，应优先关注对导航解算影响显著且相对可观测的误差项。
-
+### 5.1 MEMS 车载 GNSS/INS/ODO 松组合导航方案 参考里程计推导
+MEMS 惯性传感器的误差特性复杂，在车载应用环境下，可利用的观测量（如 GNSS 位置/速度）相对有限，导致部分误差参数（如高阶随机过程参数）的可观测性较低，难以在线精确估计。因此，在状态量建模时，应优先关注对导航解算影响显著且相对可观测的误差项。\
+**该模型的核心思想是：** 在保证主要误差项得到有效估计和补偿的前提下，通过精简状态维度和聚焦可观测参数，提升滤波器的稳定性和实时性，更适用于资源受限的MEMS车载平台。 \
 针对车载应用场景，采用以下状态向量进行估计：
-$$X_k = [\delta \mathbf{\phi}^T, \delta \mathbf{v}^T, \delta \mathbf{p}^T, \mathbf{e}_b^T, \mathbf{d}_b^T]^T$$
-部分难以在线稳定估计的参数（如杆臂，比例系数等）可考虑通过离线标定或后处理方式确定。
+$$X_k = [\delta \mathbf{\phi}^T, \delta \mathbf{v}^T, \delta \mathbf{p}^T, \mathbf{e}_b^T, \mathbf{d}_b^T, \mathbf{odkappa}^T , \mathbf{dyaw} ]^T$$
+部分难以在线稳定估计的参数（如GNSS杆臂，OD杆臂，陀螺比例系数等）可考虑通过离线标定或后处理方式确定。
 
 **状态量说明：**
 *  $\delta \mathbf{\phi}$: 姿态误差角向量 (3x1)
@@ -1713,11 +1728,100 @@ $$X_k = [\delta \mathbf{\phi}^T, \delta \mathbf{v}^T, \delta \mathbf{p}^T, \math
 *  $\delta \mathbf{p}$: 位置误差向量 (3x1)
 *  $\mathbf{e}_b$: 陀螺仪零偏向量 (3x1)
 *  $\mathbf{d}_b$: 加速度计零偏向量 (3x1)
-
-**该模型的核心思想是：** 在保证主要误差项得到有效估计和补偿的前提下，通过精简状态维度和聚焦可观测参数，提升滤波器的稳定性和实时性，更适用于资源受限的MEMS车载平台。
+*  $\mathbf{odkappa}$: 里程计系数（3x1）
+*  $\mathbf{dyaw}$: 航向角偏差
 
 采用以下量测量对状态量进行估计：
-$$Z_k = [\delta v_{g,n}, \delta p_{g,n}, \delta v_{D,n}, \delta    ]
+$$Z_k = [\delta v_{ig,n}, \delta p_{ig,n}, \delta v_{iD,n}, \delta v_{zupt}, \delta v_{nhc}, \delta yaw_{iG}, \delta \phi_{zihr}] $$
+将量测量模块化，即可分别屏蔽部分量测量。 
+
+**量测量说明：**
+*  $\delta v_{ig,n}$: ins-gnss 速度新息。
+*  $\delta p_{ig,n}$: ins-gnss 位置新息。
+*  $\delta v_{iD,n}$: ins-odo 速度新息。
+*  $\delta v_{zupt}$: 零速修正量测。
+*  $\delta v_{nhc}$: 非完整约束。
+*  $\delta yaw_{iG}$: ins-gnss 航向新息。
+*  $\delta \phi_{zihr}$: 零角速率修正。
+
+则离散化的状态转移矩阵为，
+|                           | $\delta \mathbf{\phi}$ | $\delta \mathbf{v}^T$ | $\delta \mathbf{p}^T$ | $\mathbf{e}_b^T$   | $\mathbf{d}_b^T$   | $\mathbf{odkappa}^T$ | $\mathbf{dyaw}$      |
+|---                        | ---                    |                   --- |                   --- |              ---   |              ---   |                  --- |             ---      | 
+| $\delta \mathbf{\phi}$    | $\bold M_{aa}$         | $\bold M_{av}$        | $\bold M_{ap}$        | $-\bold C_b^n$     |$\bold 0_{3\times3}$ | $-\bold 0_{3\times3}$ | ${0,0,1}$            |
+| $\delta \mathbf{v}^T$     | $\bold M_{av}$         | $\bold M_{vv}$        | $\bold M_{vp}$        |$\bold 0_{3\times3}$ |$\bold C_b^n$       | $-\bold 0_{3\times3}$ | $\bold 0_{3\times1}$  |
+| $\delta \mathbf{p}^T$     | $\bold 0_{3\times3}$    | $\bold M_{pv}$        | $\bold M_{pp}$        |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |
+| $\mathbf{e}_b^T$          | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |
+| $\mathbf{d}_b^T$          | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |
+| $\mathbf{odkappa}^T$      | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |
+| $\mathbf{dyaw}$           | $\bold 0_{1\times3}$    | $\bold 0_{1\times3}$   | $\bold 0_{1\times3}$   |$\bold 0_{1\times3}$ |$\bold 0_{1\times3}$ | $\bold 0_{1\times3}$  | $\bold 0_{1\times1}$  |
+离散化的量测矩阵为，
+|                           | $\delta \mathbf{\phi}$ | $\delta \mathbf{v}^T$ | $\delta \mathbf{p}^T$ | $\mathbf{e}_b^T$   | $\mathbf{d}_b^T$   | $\mathbf{odkappa}^T$ | $\mathbf{dyaw}$      |
+|---                        | ---                    |                   --- |                   --- |              ---   |              ---   |                  --- |             ---      | 
+| $\delta v_{ig,n}$         | $\bold 0_{3\times3}$   | $\bold I_{3\times3}$  | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$| $\bold 0_{3\times3}$ | $\bold 0_{3\times1}$ |
+| $\delta p_{ig,n}$         | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$  | $\bold I_{3\times3}$  |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$| $\bold 0_{3\times3}$ | $\bold 0_{3\times1}$ |
+| $\delta v_{iD,n}$         | $\boldsymbol{M}_{aa\mathrm{D}}$|$T_j\bold I_{3\times3}$| $\bold 0_{3\times3}$ |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$|$M_{ak\mathrm{D}}$| $\bold 0_{3\times1}$  |
+| $\delta v_{zupt}$         | $\bold 0_{3\times3}$   |$\bold I_{3\times3}$   | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |
+| $\delta v_{nhc}$          | $\boldsymbol{M}_{aa\mathrm{D}}$| $T_j\bold I_{3\times3}$| $\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $M_{ak\mathrm{D}}$ | $\bold 0_{3\times1}$  |
+| $\delta yaw_{iG}$         | ${0,0,1}$              | $\bold 0_{1\times3}$  | $\bold 0_{1\times3}$   |$\bold 0_{1\times3}$ |$\bold 0_{1\times3}$| $\bold 0_{1\times3}$ | $-1$  |
+| $\delta \phi_{zihr}$      | $\bold 0_{1\times3}$   | $\bold 0_{1\times3}$  | $\bold 0_{1\times3}$   |${0,0,1}$ |$\bold 0_{1\times3}$| $\bold 0_{1\times3}$ | $\bold 0_{1\times1}$  |
+
+另外可以注意到，我们使用的里程计速度的增量，所有上式基于里程计的推导需要进行改正，且仅考虑姿态误差、速度误差以及标定的偏差。 \
+我们可以注意到非完整性约束与里程计约束的约束基本一致，实际上我们仅需要使其中之一生效即可，即，在有真实里程计时，去除非完整约束，在没有里程计时，使用惯导速度模值作为里程计值即可。 \
+需要注意的是，$\mathbf{odkappa}^T$同时估计两个量测偏差角，理论上是应当是一致的，但是建议只使用某一类型观测。
+
+### 5.2 MEMS 航空型 GNSS/INS 松组合导航方案  参考传递对准的部分
+MEMS 在航空应用时，GNSS信号基本正常，除非在信号端被干扰，GNSS的质量检测可以被关闭，且飞行状态下，除非长直线飞行，不然机动还是非常充分的，有比较强的加减速以及盘旋状态，可以有效观测到状态误差。 \
+**该模型的核心思想是：** 航空型的组合导航系统一般不差钱，所以对误差建模可以精细一些，一般将杆臂、陀螺比例系数。如果使用了传递对准，还需要估计传递的时间差。 \
+针对机载应用场景，采用以下状态向量进行估计：
+$$X_k = [\delta \mathbf{\phi}^T, \delta \mathbf{v}^T, \delta \mathbf{p}^T, \mathbf{e}_b^T, \mathbf{d}_b^T, \mathbf{lv_{G}}^T , \mathbf{K_{gyr}} , \mathbf{lv_{m}}^T , \mathbf{\mu_{m}}^T , \mathbf{dyaw} ]^T$$
+IMU的一些系数可以使用系统级标定的方法去确认。
+
+**状态量说明：**
+*  $\delta \mathbf{\phi}$: 姿态误差角向量 (3x1)
+*  $\delta \mathbf{v}$: 速度误差向量 (3x1)
+*  $\delta \mathbf{p}$: 位置误差向量 (3x1)
+*  $\mathbf{e}_b$: 陀螺仪零偏向量 (3x1)
+*  $\mathbf{d}_b$: 加速度计零偏向量 (3x1)
+*  $\mathbf{lv_{G}}$: GNSS杆臂（3x1）
+*  $\mathbf{K_{gyr}}$: 陀螺比例系数（3x1）
+*  $\mathbf{lv_{m}}$: 主惯导杆臂（3x1）
+*  $\mathbf{\mu_{m}}$: 主惯导姿态偏差角（3x1）
+
+采用以下量测量对状态量进行估计：
+$$Z_k = [\delta v_{ig,n}, \delta p_{ig,n},\delta \phi_{im} ,\delta v_{im} \delta yaw_{iG} ] $$
+
+**量测量说明：**
+*  $\delta v_{ig,n}$: ins-gnss 速度新息。
+*  $\delta p_{ig,n}$: ins-gnss 位置新息。
+*  $\delta \phi_{im}$: ins-master 姿态新息。
+*  $\delta v_{im}$: ins-master 速度量测。
+*  $\delta yaw_{iG}$: ins-gnss 航向新息。
+
+则离散化的状态转移矩阵为，
+|                           | $\delta \mathbf{\phi}$ | $\delta \mathbf{v}^T$ | $\delta \mathbf{p}^T$ | $\mathbf{e}_b^T$   | $\mathbf{d}_b^T$   | $\mathbf{lv_{G}}^T$ | $\mathbf{K_{gyr}}$ | $\mathbf{lv_{m}}^T$ | $\mathbf{\mu_{m}}^T$ | \mathbf{dyaw} |
+|---                        | ---                    |                   --- |                   --- |              ---   |              ---   |                  --- |             ---   |                 --- |                  --- |      ---      |
+| $\delta \mathbf{\phi}$    | $\bold M_{aa}$         | $\bold M_{av}$        | $\bold M_{ap}$        | $-\bold C_b^n$     |$\bold 0_{3\times3}$ | $-\bold 0_{3\times3}$ | ${0,0,1}$            |             |                   |           |
+| $\delta \mathbf{v}^T$     | $\bold M_{av}$         | $\bold M_{vv}$        | $\bold M_{vp}$        |$\bold 0_{3\times3}$ |$\bold C_b^n$       | $-\bold 0_{3\times3}$ | $\bold 0_{3\times1}$  |            |                   |           |
+| $\delta \mathbf{p}^T$     | $\bold 0_{3\times3}$    | $\bold M_{pv}$        | $\bold M_{pp}$        |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |          |                   |           |
+| $\mathbf{e}_b^T$          | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |        |                   |           |
+| $\mathbf{d}_b^T$          | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |        |                   |           |
+| $\mathbf{odkappa}^T$      | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |        |                   |           |
+| $\mathbf{dyaw}$           | $\bold 0_{1\times3}$    | $\bold 0_{1\times3}$   | $\bold 0_{1\times3}$   |$\bold 0_{1\times3}$ |$\bold 0_{1\times3}$ | $\bold 0_{1\times3}$  | $\bold 0_{1\times1}$  |        |                   |           |
+
+离散化的量测矩阵为，
+|                           | $\delta \mathbf{\phi}$ | $\delta \mathbf{v}^T$ | $\delta \mathbf{p}^T$ | $\mathbf{e}_b^T$   | $\mathbf{d}_b^T$   | $\mathbf{lv_{G}}^T$ | $\mathbf{K_{gyr}}$ | $\mathbf{lv_{m}}^T$ | $\mathbf{\mu_{m}}^T$ |
+|---                        | ---                    |                   --- |                   --- |              ---   |              ---   |                  --- |             ---      |              --- |       ---            |
+| $\delta v_{ig,n}$         | $\bold 0_{3\times3}$   | $\bold I_{3\times3}$  | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$| $\bold 0_{3\times3}$ | $\bold 0_{3\times1}$ |                  |                      |
+| $\delta p_{ig,n}$         | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$  | $\bold I_{3\times3}$  |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$| $\bold 0_{3\times3}$ | $\bold 0_{3\times1}$ |                  |                      |
+| $\delta \phi_{im}$        | $\boldsymbol{M}_{aa\mathrm{D}}$|$T_j\bold I_{3\times3}$| $\bold 0_{3\times3}$ |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$|$M_{ak\mathrm{D}}$| $\bold 0_{3\times1}$  |              |                      |
+| $\delta v_{im}$           | $\bold 0_{3\times3}$   |$\bold I_{3\times3}$   | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |              |                      |
+| $\delta yaw_{iG}$         | ${0,0,1}$              | $\bold 0_{1\times3}$  | $\bold 0_{1\times3}$   |$\bold 0_{1\times3}$ |$\bold 0_{1\times3}$| $\bold 0_{1\times3}$ | $-1$  |                               |                      |
+
+### 5.3 工程上的滤波处理优化
+### 5.3.1 时序问题
+
+
+
 
 
 ## 6 优化技术-使用算力优势的平台 富少爷
