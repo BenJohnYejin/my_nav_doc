@@ -519,14 +519,51 @@ $$
 注意延时。
 
 ### 1.9 长直线工况下航向漂移
-**参考文献**： 传递对准方案，若只有航向漂移，可直接参考带有航向观测的状态。
+**参考文献**： 传递对准方案，若只有航向漂移，可直接参考带有航向观测的方案，但需要注意主惯导时间延时的处理。
 
 以主惯导计算参数代替子惯导的相关计算参数进行捷联解算，可得子惯导的姿态$\bold{C}^n_{b_S}$和速度$\bold{v}_S^n$更新方程，分别为
 $$
 \dot{C}_{b_{S}}=C_{b_{S}}\left(\omega_{a_{S}}^{b_{S}}\times\right)=C_{b_{S}}\left(\omega_{b_{S}}^{b_{S}}\times\right)-\left(\omega_{a_{N},M}^{n}\times\right)C_{b_{S}}^{n} \\
-\dot{\bold{v}}^{n}_S=C^{n}f^{b_{S}}-\left(2\omega_{F,M}^{n}+\omega_{m,M}^{n}\right)\times\nu_{M}^{n}+g_{M}^{n}
+\dot{\bold{v}}^{n}_S=C^{n}f^{b_{S}}-\left(2\omega_{ie,M}^{n}+\omega_{in,M}^{n}\right)\times\nu_{M}^{n}+g_{M}^{n}
 $$
-其中，\bold{v}_M^n为主惯导速度；
+其中，$\bold{v}_M^n$为主惯导速度；$\omega_{ie,M}^{n}$ $\omega_{in,M}^{n}$ $\omega_{en,M}^{n}$ $g_{M}^{n}$为主惯导的计算参数。
+
+子惯导误差方程为，
+$$
+\dot{\phi}_{s}=\dot{\phi}_{s}\times\omega_{in,M}^{n}-C_{b_{S}}^{n}\varepsilon^{b_{S}}\\
+\delta\dot{\nu}_{S}^{n}=(C_{b_{S}}^{n}f_{sf}^{b_{S}})\times\dot{\phi}_{S}+C_{b_{S}}^{n}\nabla^{b_{S}}
+$$
+计算主子惯导之间的速度差异，并考虑杆臂参数$\delta l^{b}$  
+$$
+Z_{v}=\tilde{v}_{S}^{n}-v_{M}^{n}=\delta v_{S}^{n}-C_{b_{S}}^{n}\left(\omega_{b_{S}}^{b_{S}}\times\right)\delta l^{b}+V_{v}
+$$
+计算主惯导姿态$C_{bM}^{n}$与子惯导姿态阵$C_{bM}^{n'}$之间的乘积
+$$
+C_{bM}^{n}({C_{bs}^{n'}})^{\top}=C_{bs}^{n}C_{bM}^{bs}C_{bs}^{n}C_{n}^{n'} \approx  \\
+C_{bs}^{n}\left[I-[(\mu^{b}+\theta^{b})\times]\right]C_{bs}^{i}\left[I+(\phi_{s}\times)\right] \approx  \\
+I+(\phi_{s}\times)-C_{bs}^{i}\left[(\mu^{b}+\theta^{b})\times\right]C_{bs}^{i}=  \\
+I+(\phi_{s}\times)-\left[\left[C_{bs}^{i}(\mu^{b}+\theta^{b})\right]\times\right]\triangle I+(Z_{\phi}\times) 
+$$
+式中，$n'$为子惯导的计算导航系；$C_{b_M}^{b_S}$为主子惯导之间的安装偏差矩阵，包含固定偏差角$\mu^{b}$和姿态偏差角\theta^{b}。 \
+在上式中，挠曲变形$\theta^{b}$的二阶马尔可夫过程建模很难符合实际情况，过程参数也难以确定，删除该项。 \
+若子惯导精度较低，杆臂在短时间内也无法估计得到，实际上一般直接量取后补偿。 \
+速度量测一般对水平失准角有比较好的估计作用，为了减小状态量建模，删去水平失准角避免时间不同步等对水平失准角估计的干扰。 \
+传递对准的时间比较短，一般只能对陀螺的常值漂移进行粗略的估计，对加表的随机常值零偏往往不好。 \
+主子惯导之间的延时一般在几十毫秒的量级，需要当时飞行工况平缓。
+$$
+\begin{aligned}
+&\dot{X}=FX+GW^{b}\\
+&Z=
+\begin{bmatrix}
+\tilde{\nu}_{S}^{n}+C_{b_{S}}^{n}\left(\omega_{\theta_{S}}^{b_{S}}\times\delta l^{b}\right)-v_{M}^{n}\\
+\\\{\left[C_{b_{M}}^{n}\left(C_{b_{S}}^{n^{\prime}}\right)^{T}-I\right]^{V}\}_{(3)}
+\end{bmatrix}
+=HX+V
+\end{aligned}
+$$
+其中
+$$X=\left[\phi_{S}^{T}\left(\delta v_{S}^{n}\right)^{T}\left(\varepsilon^{b_{S}}\right)^{T}\left(\nabla^{b_{S}}\right)^{T}\left(\mu^{b}\right)^{T}\right]^{T}$$
+
 
 
 
@@ -1818,7 +1855,12 @@ $$Z_k = [\delta v_{ig,n}, \delta p_{ig,n},\delta \phi_{im} ,\delta v_{im} \delta
 | $\delta yaw_{iG}$         | ${0,0,1}$              | $\bold 0_{1\times3}$  | $\bold 0_{1\times3}$   |$\bold 0_{1\times3}$ |$\bold 0_{1\times3}$| $\bold 0_{1\times3}$ | $-1$  |                               |                      |
 
 ### 5.3 工程上的滤波处理优化
-### 5.3.1 时序问题
+### 5.3.1 时序问题 本质上是嵌入式程序优化的问题
+在一些嵌入式系统中，算力有限，无法在规定的时间完成大规模的浮点计算。 于是在每个时间片内，进行特定步数的计算，即以时间换计算效率。 \
+根据工程经验，Kalman时间更新频率满足10Hz以上即可。 \
+参考序贯滤波，每次对矩阵的某一行进行计算即可。
+
+
 
 
 
