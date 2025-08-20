@@ -45,8 +45,6 @@ SLAM的核心优化问题（如Bundle Adjustment, 基于图优化）通常是一
 它量化了位姿变化对误差的局部影响，并在一定程度上揭示了系统的可观测性。 
 
 
-
-
 ## 1.  惯性导航基础与建模
 **本节内容主要参考并基于[PSINS](https://psins.org.cn/)开源惯性导航算法库的框架与思想构建，并针对当前版本程序给出关键建模说明。**
 ### 1.1  惯性导航基本原理
@@ -60,7 +58,7 @@ SLAM的核心优化问题（如Bundle Adjustment, 基于图优化）通常是一
 
 **导航参数转换**：为了获得载体相对于地球（通常指当地地理导航坐标系，即 n 系）的运动信息（姿态、速度、位置），需要引入地球模型参数（如地球自转角速度$\boldsymbol{\omega}_{ie}$、地球半径）和当前位置信息：
 1.  利用地球自转角速度$\boldsymbol{\omega}_{ie}$和载体在地球上的运动速度$\boldsymbol{v}_{eb}^{n}$（待求量），计算 i系 到 n系 的旋转角速度$\boldsymbol{\omega}_{in}^{n}$。
-2.  结合载体在 i系 下的运动参数 ($\boldsymbol{v}_{ib}^{i}$,$\boldsymbol{p}_{ib}^{i}$) 和$\boldsymbol{\omega}_{in}^{n}$，通过坐标系转换关系（例如方向余弦矩阵或四元数），最终解算出载体在 n系 下的姿态（b系 相对于 n系）、速度$\boldsymbol{v}_{eb}^{n}$和位置（经纬度、高度）等导航参数。
+2.  结合载体在i系下的运动参数($\boldsymbol{v}_{ib}^{i}$,$\boldsymbol{p}_{ib}^{i}$) 和$\boldsymbol{\omega}_{in}^{n}$，通过坐标系转换关系（例如方向余弦矩阵或四元数），最终解算出载体在 n系 下的姿态（b系 相对于 n系）、速度$\boldsymbol{v}_{eb}^{n}$和位置（经纬度、高度）等导航参数。
 
 ### 1.2 IMU器件误差建模
 #### 1.2.1 确定性误差
@@ -418,7 +416,7 @@ $$
    - 总标定时间：≈1.5小时
 
 2. **位置序列**：
-   | 位置序号 | 初始方位 | 转动操作 |
+   | 位置序号 | 初始方位 | 转动操作(90°转动) |
    |----------|----------|----------|
    | 1        | 东北天   | $+ox_b$  |
    | 2        | 东天南   | $+ox_b$  |
@@ -514,11 +512,12 @@ $$
 
 **matlab实现见 sysclbtMEMS 函数。**
 
-### 1.8 吊舱转动导致的算法计算异常
-**参考文献**：翁浚,刘健宁,寇科,等.吊舱SINS/GNSS组合导航多杆臂效应在线估计算法[J].中国惯性技术学报,2021,29(02):184-190.DOI:10.13695/j.cnki.12-1222/o3.2021.02.007.
+## 1.8 吊舱转动导致的算法计算异常
+**参考文献**：翁浚,刘健宁,寇科,等.吊舱SINS/GNSS组合导航多杆臂效应在线估计算法[J].中国惯性技术学报,2021,29(02):184-190.DOI:10.13695/j.cnki.12-1222/o3.2021.02.007.  \
+在吊舱无法输入框架角给到导航系统时，杆臂的不确定度需要放大，如內杆臂为10cm左右，则杆臂噪声最小为10cm，避免无法适应的情况，此时姿态方差也应放大，将其作为低精度惯导使用。 \
 注意延时。
 
-### 1.9 长直线工况下航向漂移
+## 1.9 长直线工况下航向漂移
 **参考文献**： 传递对准方案，若只有航向漂移，可直接参考带有航向观测的方案，但需要注意主惯导时间延时的处理。
 
 以主惯导计算参数代替子惯导的相关计算参数进行捷联解算，可得子惯导的姿态$\bold{C}^n_{b_S}$和速度$\bold{v}_S^n$更新方程，分别为
@@ -562,10 +561,47 @@ $$
 \end{aligned}
 $$
 其中
-$$X=\left[\phi_{S}^{T}\left(\delta v_{S}^{n}\right)^{T}\left(\varepsilon^{b_{S}}\right)^{T}\left(\nabla^{b_{S}}\right)^{T}\left(\mu^{b}\right)^{T}\right]^{T}$$
+$$
+X=\left[\phi_{S}^{T}\left(\delta v_{S}^{n}\right)^{T}\left(\varepsilon^{b_{S}}\right)^{T}\left(\nabla^{b_{S}}\right)^{T}\left(\mu^{b}\right)^{T}\right]^{T}
+$$
 
-
-
+$$
+F=
+\begin{bmatrix}
+-\omega_{in,M}^n\times&0_{3\times3}&-C_{b_S}^n&0_{3\times3}&0_{3\times3}\\
+f_{si}^n\times&0_{3\times3}&0_{3\times3}&C_{b_S}^n&0_{3\times3}\\
+&&0_{9\times15}
+\end{bmatrix}
+$$
+$$
+G=
+\begin{bmatrix}
+-C_{b_{S}}^{n}&\mathbf{0}_{3\times3}\\
+\\\mathbf{0}_{3\times3}&\mathbf{C}_{b_{S}}^{n}\\
+\\\mathbf{0}_{9\times6}
+\end{bmatrix}
+$$
+$$
+w^b=
+\begin{bmatrix}
+w_g^b\\\\w_a^b
+\end{bmatrix}
+$$
+$$
+H=
+\begin{bmatrix}
+0_{3\times3}&I_{3\times3}&0_{3\times6}&0_{3\times3}\\
+0,0,1&0_{1\times3}&0_{1\times6}&-(C_{b_{S}}^{n})_{(3,1)}
+\end{bmatrix}
+$$
+$$
+\mathbf{V}=
+\begin{bmatrix}
+\mathbf{V}_{v}\\
+(\mathbf{V}_{\phi})_{(3)}
+\end{bmatrix}
+$$
+实现传递对准。
 
 ## 2. GNSS定位基础与定位原理
 **本节内容主要参考并基于[RTKlib](https://www.rtklib.com/)开源GNSS算法库的框架构建（v2.4.3），重点说明关键模型实现细节。**
@@ -730,10 +766,6 @@ RTKlib实现：`ddres()`函数中多普勒残差计算
 1. **载噪比 (CN0)**：
    - 定义：$CN0 [dB-Hz] = 10 \log_{10}(P_s / P_n)$
    - RTKlib阈值处理：
-     ```c
-     /* 伪距加权系数与CN0关系 */
-     var = var_meas * pow(10.0, 0.1*(cn0_min - cn0));
-     ```
 
 2. **锁定时间 (Lock Time)**：
    - 周跳检测依据：`locktime`连续计数
@@ -1791,7 +1823,9 @@ $$Z_k = [\delta v_{ig,n}, \delta p_{ig,n}, \delta v_{iD,n}, \delta v_{zupt}, \de
 | $\mathbf{d}_b^T$          | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |
 | $\mathbf{odkappa}^T$      | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |
 | $\mathbf{dyaw}$           | $\bold 0_{1\times3}$    | $\bold 0_{1\times3}$   | $\bold 0_{1\times3}$   |$\bold 0_{1\times3}$ |$\bold 0_{1\times3}$ | $\bold 0_{1\times3}$  | $\bold 0_{1\times1}$  |
+
 离散化的量测矩阵为，
+
 |                           | $\delta \mathbf{\phi}$ | $\delta \mathbf{v}^T$ | $\delta \mathbf{p}^T$ | $\mathbf{e}_b^T$   | $\mathbf{d}_b^T$   | $\mathbf{odkappa}^T$ | $\mathbf{dyaw}$      |
 |---                        | ---                    |                   --- |                   --- |              ---   |              ---   |                  --- |             ---      | 
 | $\delta v_{ig,n}$         | $\bold 0_{3\times3}$   | $\bold I_{3\times3}$  | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$| $\bold 0_{3\times3}$ | $\bold 0_{3\times1}$ |
@@ -1806,12 +1840,12 @@ $$Z_k = [\delta v_{ig,n}, \delta p_{ig,n}, \delta v_{iD,n}, \delta v_{zupt}, \de
 我们可以注意到非完整性约束与里程计约束的约束基本一致，实际上我们仅需要使其中之一生效即可，即，在有真实里程计时，去除非完整约束，在没有里程计时，使用惯导速度模值作为里程计值即可。 \
 需要注意的是，$\mathbf{odkappa}^T$同时估计两个量测偏差角，理论上是应当是一致的，但是建议只使用某一类型观测。
 
-### 5.2 MEMS 航空型 GNSS/INS 松组合导航方案  参考传递对准的部分
+### 5.2 MEMS 航空型 GNSS/INS 松组合导航方案  若需要对准，则需要参考传递对准的部分
 MEMS 在航空应用时，GNSS信号基本正常，除非在信号端被干扰，GNSS的质量检测可以被关闭，且飞行状态下，除非长直线飞行，不然机动还是非常充分的，有比较强的加减速以及盘旋状态，可以有效观测到状态误差。 \
 **该模型的核心思想是：** 航空型的组合导航系统一般不差钱，所以对误差建模可以精细一些，一般将杆臂、陀螺比例系数。如果使用了传递对准，还需要估计传递的时间差。 \
 针对机载应用场景，采用以下状态向量进行估计：
 $$X_k = [\delta \mathbf{\phi}^T, \delta \mathbf{v}^T, \delta \mathbf{p}^T, \mathbf{e}_b^T, \mathbf{d}_b^T, \mathbf{lv_{G}}^T , \mathbf{K_{gyr}} , \mathbf{lv_{m}}^T , \mathbf{\mu_{m}}^T , \mathbf{dyaw} ]^T$$
-IMU的一些系数可以使用系统级标定的方法去确认。
+IMU的一些系数可以使用系统级标定的方法去确认，观测量与状态量的时间差需要嵌入式去测量。
 
 **状态量说明：**
 *  $\delta \mathbf{\phi}$: 姿态误差角向量 (3x1)
@@ -1821,11 +1855,11 @@ IMU的一些系数可以使用系统级标定的方法去确认。
 *  $\mathbf{d}_b$: 加速度计零偏向量 (3x1)
 *  $\mathbf{lv_{G}}$: GNSS杆臂（3x1）
 *  $\mathbf{K_{gyr}}$: 陀螺比例系数（3x1）
-*  $\mathbf{lv_{m}}$: 主惯导杆臂（3x1）
+*  $\mathbf{lv_{m}}$: 主惯导杆臂（3x1），固连情况下直接补偿，不估计，估计不准。
 *  $\mathbf{\mu_{m}}$: 主惯导姿态偏差角（3x1）
 
 采用以下量测量对状态量进行估计：
-$$Z_k = [\delta v_{ig,n}, \delta p_{ig,n},\delta \phi_{im} ,\delta v_{im} \delta yaw_{iG} ] $$
+$$Z_k = [\delta v_{ig,n}, \delta p_{ig,n},\delta \phi_{im} ,\delta v_{im} ,\delta yaw_{iG} ] $$
 
 **量测量说明：**
 *  $\delta v_{ig,n}$: ins-gnss 速度新息。
@@ -1834,32 +1868,32 @@ $$Z_k = [\delta v_{ig,n}, \delta p_{ig,n},\delta \phi_{im} ,\delta v_{im} \delta
 *  $\delta v_{im}$: ins-master 速度量测。
 *  $\delta yaw_{iG}$: ins-gnss 航向新息。
 
-则离散化的状态转移矩阵为，
-|                           | $\delta \mathbf{\phi}$ | $\delta \mathbf{v}^T$ | $\delta \mathbf{p}^T$ | $\mathbf{e}_b^T$   | $\mathbf{d}_b^T$   | $\mathbf{lv_{G}}^T$ | $\mathbf{K_{gyr}}$ | $\mathbf{lv_{m}}^T$ | $\mathbf{\mu_{m}}^T$ | \mathbf{dyaw} |
-|---                        | ---                    |                   --- |                   --- |              ---   |              ---   |                  --- |             ---   |                 --- |                  --- |      ---      |
-| $\delta \mathbf{\phi}$    | $\bold M_{aa}$         | $\bold M_{av}$        | $\bold M_{ap}$        | $-\bold C_b^n$     |$\bold 0_{3\times3}$ | $-\bold 0_{3\times3}$ | ${0,0,1}$            |             |                   |           |
-| $\delta \mathbf{v}^T$     | $\bold M_{av}$         | $\bold M_{vv}$        | $\bold M_{vp}$        |$\bold 0_{3\times3}$ |$\bold C_b^n$       | $-\bold 0_{3\times3}$ | $\bold 0_{3\times1}$  |            |                   |           |
-| $\delta \mathbf{p}^T$     | $\bold 0_{3\times3}$    | $\bold M_{pv}$        | $\bold M_{pp}$        |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |          |                   |           |
-| $\mathbf{e}_b^T$          | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |        |                   |           |
-| $\mathbf{d}_b^T$          | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |        |                   |           |
-| $\mathbf{odkappa}^T$      | $\bold 0_{3\times3}$    | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$   |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |        |                   |           |
-| $\mathbf{dyaw}$           | $\bold 0_{1\times3}$    | $\bold 0_{1\times3}$   | $\bold 0_{1\times3}$   |$\bold 0_{1\times3}$ |$\bold 0_{1\times3}$ | $\bold 0_{1\times3}$  | $\bold 0_{1\times1}$  |        |                   |           |
+则离散化的状态转移矩阵为
+|                           | $\delta \mathbf{\phi}$ | $\delta \mathbf{v}^T$ | $\delta \mathbf{p}^T$ | $\mathbf{e}_b^T$    | $\mathbf{d}_b^T$    | $\mathbf{lv_{G}}^T$   | $\mathbf{K_{gyr}}$    | $\mathbf{dyaw}$ |
+|---                        | ---                    |                   --- |                   --- |              ---    |              ---    |                  ---  |             ---       |       ---        |
+| $\delta \mathbf{\phi}$    | $\bold M_{aa}$         | $\bold M_{av}$        | $\bold M_{ap}$        | $-\bold C_b^n$      |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  |     ${0,0,1}$    |
+| $\delta \mathbf{v}^T$     | $\bold M_{av}$         | $\bold M_{vv}$        | $\bold M_{vp}$        |$\bold 0_{3\times3}$ |$\bold C_b^n$        | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$|
+| $\delta \mathbf{p}^T$     | $\bold 0_{3\times3}$   | $\bold M_{pv}$        | $\bold M_{pp}$        |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$|
+| $\mathbf{e}_b^T$          | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$|
+| $\mathbf{d}_b^T$          | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$|
+| $\mathbf{lv_{G}}^T$       | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$|
+| $\mathbf{K_{gyr}}$        | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$|
+| $\mathbf{dyaw}$           | $\bold 0_{1\times3}$   | $\bold 0_{1\times3}$  | $\bold 0_{1\times3}$  |$\bold 0_{1\times3}$ |$\bold 0_{1\times3}$ | $\bold 0_{1\times3}$  | $\bold 0_{1\times3}$  | 0           |
 
-离散化的量测矩阵为，
-|                           | $\delta \mathbf{\phi}$ | $\delta \mathbf{v}^T$ | $\delta \mathbf{p}^T$ | $\mathbf{e}_b^T$   | $\mathbf{d}_b^T$   | $\mathbf{lv_{G}}^T$ | $\mathbf{K_{gyr}}$ | $\mathbf{lv_{m}}^T$ | $\mathbf{\mu_{m}}^T$ |
-|---                        | ---                    |                   --- |                   --- |              ---   |              ---   |                  --- |             ---      |              --- |       ---            |
-| $\delta v_{ig,n}$         | $\bold 0_{3\times3}$   | $\bold I_{3\times3}$  | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$| $\bold 0_{3\times3}$ | $\bold 0_{3\times1}$ |                  |                      |
-| $\delta p_{ig,n}$         | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$  | $\bold I_{3\times3}$  |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$| $\bold 0_{3\times3}$ | $\bold 0_{3\times1}$ |                  |                      |
-| $\delta \phi_{im}$        | $\boldsymbol{M}_{aa\mathrm{D}}$|$T_j\bold I_{3\times3}$| $\bold 0_{3\times3}$ |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$|$M_{ak\mathrm{D}}$| $\bold 0_{3\times1}$  |              |                      |
-| $\delta v_{im}$           | $\bold 0_{3\times3}$   |$\bold I_{3\times3}$   | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |              |                      |
-| $\delta yaw_{iG}$         | ${0,0,1}$              | $\bold 0_{1\times3}$  | $\bold 0_{1\times3}$   |$\bold 0_{1\times3}$ |$\bold 0_{1\times3}$| $\bold 0_{1\times3}$ | $-1$  |                               |                      |
+离散化的量测矩阵为，主子惯导杆臂不估计\
+|                           | $\delta \mathbf{\phi}$ | $\delta \mathbf{v}^T$ | $\delta \mathbf{p}^T$ | $\mathbf{e}_b^T$   | $\mathbf{d}_b^T$   | $\mathbf{lv_{G}}^T$ | $\mathbf{K_{gyr}}$ |  $\mathbf{dyaw}$ |
+|---                        | ---                    |                   --- |                   --- |              ---   |              ---   |                  --- |             ---   |       ---        |
+| $\delta v_{ig,n}$         | $\bold 0_{3\times3}$   | $\bold I_{3\times3}$  | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$| $\boldC_b^n(\omega_{eb}^b \times)$|$\bold 0_{3\times1}$| $\bold 0_{3\times1}$|
+| $\delta p_{ig,n}$         | $\bold 0_{3\times3}$   | $\bold 0_{3\times3}$  | $\bold I_{3\times3}$  |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$| $\boldM_{pv}\boldC_b^n$ | $\bold 0_{3\times1}$ |$\bold 0_{3\times1}$|
+| $\delta \phi_{im}$        | $\boldsymbol{M}_{aa\mathrm{D}}$|$T_j\bold I_{3\times3}$| $\bold 0_{3\times3}$ |$\bold 0_{3\times3}$|$\bold 0_{3\times3}$|$M_{ak\mathrm{D}}$| $\bold 0_{3\times1}$  |$\bold 0_{3\times1}$|
+| $\delta v_{im}$           | $\bold 0_{3\times3}$   |$\bold I_{3\times3}$   | $\bold 0_{3\times3}$  |$\bold 0_{3\times3}$ |$\bold 0_{3\times3}$ | $\bold 0_{3\times3}$  | $\bold 0_{3\times1}$  |$\bold 0_{3\times1}$|
+| $\delta yaw_{iG}$         | ${0,0,1}$              | $\bold 0_{1\times3}$  | $\bold 0_{1\times3}$   |$\bold 0_{1\times3}$ |$\bold 0_{1\times3}$| $\bold 0_{1\times3}$  | $\bold 0_{1\times3}$  |$-1$  |
 
 ### 5.3 工程上的滤波处理优化
 ### 5.3.1 时序问题 本质上是嵌入式程序优化的问题
 在一些嵌入式系统中，算力有限，无法在规定的时间完成大规模的浮点计算。 于是在每个时间片内，进行特定步数的计算，即以时间换计算效率。 \
 根据工程经验，Kalman时间更新频率满足10Hz以上即可。 \
-参考序贯滤波，每次对矩阵的某一行进行计算即可。
-
+参考序贯滤波，每次对矩阵的某一行进行计算即可。考虑滤波流程，
 
 
 
